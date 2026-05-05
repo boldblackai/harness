@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.4] - 2026-05-04
+
+### Summary
+Fixes ownership of the `/opt/hermes-agent` directory to the harness user, ensuring proper permissions for the hermes-agent installation.
+
+### Changes
+- 50813d6 make harness the owner of /opt/hermes-agent
+
 ## [1.6.3] - 2026-05-04
 
 ### Summary
