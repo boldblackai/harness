@@ -938,3 +938,43 @@ test("--volumes does not break existing workspace mount", () => {
     `expected user volume in args: ${a.join(" ")}`,
   );
 });
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
