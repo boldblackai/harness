@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.3] - 2026-05-04
+
+### Summary
+Adds `web` and `pty` extras to hermes-agent installation, enabling additional hermes functionality for web-based operations and PTY interactions.
+
+### Changes
+- 35d96c2 add web,pty extras to hermes
+
 ## [1.6.2] - 2026-05-03
 
 ### Summary
