@@ -978,3 +978,59 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("--volumes appears after built-in mounts in docker args (last-wins override capability)", () => {
+  // Docker's `-v` flag has "last wins" semantics for overlapping target
+  // paths. The CLI assembles docker args as `...volumeArgs, ...userVolumeArgs`
+  // (src/harness.ts:508-509), so user-supplied --volumes are appended AFTER
+  // built-in mounts (workspace, skills, persist). This gives a real capability:
+  // a user can override the default workspace mount with
+  // `--volumes /tmp/sandbox:/workspace`, or shadow a skills directory with
+  // `--volumes /tmp/empty:/home/harness/.agents/skills`.
+  //
+  // Lock that ordering boundary: a future refactor that prepends user volumes
+  // (...userVolumeArgs, ...volumeArgs) would silently strip the override
+  // capability, since the trailing built-in mount would now win.
+  const { home, cleanup } = makeSkillsHome();
+  fs.mkdirSync(path.join(home, ".agents", "skills"), { recursive: true });
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-order-"));
+  try {
+    const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/mnt/data`], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // Find the index of each mount target's `-v` flag. We look for the
+    // index of the value (e.g. `${WORK_DIR}:/workspace`) and assume `-v`
+    // is at index-1.
+    const workspaceIdx = a.indexOf(`${WORK_DIR}:/workspace`);
+    const skillsIdx = a.findIndex((arg) =>
+      arg.endsWith(":/home/harness/.agents/skills"),
+    );
+    const userIdx = a.indexOf(`${extraDir}:/mnt/data`);
+
+    assert.notEqual(
+      workspaceIdx,
+      -1,
+      `workspace mount missing: ${a.join(" ")}`,
+    );
+    assert.notEqual(skillsIdx, -1, `skills mount missing: ${a.join(" ")}`);
+    assert.notEqual(userIdx, -1, `user volume missing: ${a.join(" ")}`);
+
+    // User volume index must be strictly greater than every built-in
+    // mount index, so docker's last-wins resolution favors the user.
+    assert.ok(
+      userIdx > workspaceIdx,
+      `--volumes must appear AFTER workspace mount; user@${userIdx} workspace@${workspaceIdx} args=${a.join(" ")}`,
+    );
+    assert.ok(
+      userIdx > skillsIdx,
+      `--volumes must appear AFTER skills mount; user@${userIdx} skills@${skillsIdx} args=${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
