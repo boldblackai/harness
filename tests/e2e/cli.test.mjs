@@ -978,3 +978,42 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("--volumes coexists with skills mounts and the workspace mount (no interference)", () => {
+  // Three-way: an existing user skills directory at ~/.agents/skills, a
+  // user --volumes spec, and the default cwd:/workspace mount must all
+  // pass through to docker simultaneously. Locks the contract that none
+  // of these orthogonal mount sources interfere with each other.
+  const { home, cleanup } = makeSkillsHome();
+  fs.mkdirSync(path.join(home, ".agents", "skills"), { recursive: true });
+  const extraDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-vol-skills-"),
+  );
+  try {
+    const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/mnt/data`], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // Workspace mount.
+    assert.ok(
+      a.includes(`${WORK_DIR}:/workspace`),
+      `expected workspace mount in: ${a.join(" ")}`,
+    );
+    // Skills mount.
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.agents/skills")),
+      `expected .agents/skills mount in: ${a.join(" ")}`,
+    );
+    // User volume.
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
