@@ -978,3 +978,59 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("hermes interactive (no --ephemeral) creates both persistence dirs and mounts", () => {
+  // HermesAdapter.persistMounts() returns two distinct mounts:
+  //   - local      -> /home/harness/.hermes-local
+  //   - openrouter -> /home/harness/.hermes-openrouter
+  //
+  // The pi adapter test only locks a single empty-hostSubpath mount and
+  // PR #30 (mine, merged) locks the opencode 3-mount shape. This is the
+  // analog test for hermes\'s 2-mount shape so a future refactor cannot
+  // silently drop one of the two hermes persistence buckets.
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) {
+    return; // skip on platforms without `script`.
+  }
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const r = spawnSync(
+    "script",
+    ["-qfec", `node ${CLI} -a hermes`, "/dev/null"],
+    {
+      cwd: localWork,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(r.status, 0, r.stderr);
+
+  // Both host-side persistence buckets must be created.
+  for (const sub of ["local", "openrouter"]) {
+    assert.equal(
+      fs.existsSync(path.join(localWork, ".harness", "hermes", sub)),
+      true,
+      `.harness/hermes/${sub}/ should be created in interactive mode`,
+    );
+  }
+
+  // Both docker -v mounts must target the documented container paths.
+  const cleaned = r.stdout.replace(/\r/g, "");
+  const a = dockerArgs(cleaned);
+  assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
+  const targets = [
+    "/home/harness/.hermes-local",
+    "/home/harness/.hermes-openrouter",
+  ];
+  for (const t of targets) {
+    assert.ok(
+      a.some((arg) => arg.endsWith(`:${t}`)),
+      `expected -v mount ending in :${t} in: ${a.join(" ")}`,
+    );
+  }
+});
