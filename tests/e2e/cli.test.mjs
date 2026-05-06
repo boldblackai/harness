@@ -978,3 +978,42 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("hermes: prompt is forwarded as `hermes chat -q <prompt>` (NOT -p)", () => {
+  // HermesAdapter.buildCommand emits ["hermes","chat"] + ["-m", model] (if model)
+  // + ["-q", prompt] (if prompt). The existing hermes test only locks the
+  // no-model + no-prompt case ['hermes','chat']. Lock the prompt-forwarding
+  // shape: it must be -q, NOT -p (-p is the pi flag), and the prompt must
+  // immediately follow -q.
+  //
+  // Also lock the ordering when BOTH -m and -p are provided:
+  // ["hermes","chat","-m","<model>","-q","<prompt>"]
+  const r = runCli([
+    "-a",
+    "hermes",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "-p",
+    "summarize",
+  ]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+
+  const hermesIdx = a.indexOf("hermes");
+  assert.notEqual(hermesIdx, -1, `expected 'hermes' in: ${a.join(" ")}`);
+  // The container command tail must be exactly: hermes chat -m MODEL -q PROMPT
+  const tail = a.slice(hermesIdx);
+  assert.deepEqual(
+    tail,
+    ["hermes", "chat", "-m", "anthropic/claude-sonnet-4-5", "-q", "summarize"],
+    `unexpected hermes tail: ${tail.join(" ")}`,
+  );
+
+  // And -p (the pi flag) must NOT appear in the hermes container cmd.
+  assert.equal(
+    tail.includes("-p"),
+    false,
+    `hermes must use -q, not -p; got tail: ${tail.join(" ")}`,
+  );
+});
