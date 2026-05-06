@@ -978,3 +978,41 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("image tag mapping: pi gets bare tag, opencode/hermes get adapter-prefixed tags", () => {
+  // getImage() at src/harness.ts has an asymmetric rule:
+  //   pi       -> ghcr.io/capotej/harness:<TAG>
+  //   opencode -> ghcr.io/capotej/harness:opencode-<TAG>
+  //   hermes   -> ghcr.io/capotej/harness:hermes-<TAG>
+  //
+  // The existing test at line 309 (`opencode: image tag is "opencode-<version>"`)
+  // only covers the opencode prefix path. Lock the **full mapping** here so
+  // a future refactor can\'t accidentally:
+  //   - add a "pi-" prefix to pi (which would break every existing pi user)
+  //   - drop the prefix for opencode/hermes (which would map all 3 agents
+  //     to the same image)
+  const cases = [
+    { agent: "pi", expectedTag: "test-tag" },
+    { agent: "opencode", expectedTag: "opencode-test-tag" },
+    { agent: "hermes", expectedTag: "hermes-test-tag" },
+  ];
+  for (const { agent, expectedTag } of cases) {
+    const r = runCli(["-a", agent, "-p", "noop"], {
+      extraEnv: { HARNESS_IMAGE_TAG: "test-tag" },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, `expected DOCKER_INVOKED line for ${agent}`);
+    const expectedImage = `ghcr.io/capotej/harness:${expectedTag}`;
+    assert.ok(
+      a.includes(expectedImage),
+      `expected image '${expectedImage}' for agent '${agent}' in: ${a.join(" ")}`,
+    );
+    // Negative: the pi-prefixed form must NEVER appear.
+    assert.equal(
+      a.some((arg) => arg.startsWith("ghcr.io/capotej/harness:pi-")),
+      false,
+      `pi must never get a 'pi-' prefix; got: ${a.join(" ")}`,
+    );
+  }
+});
