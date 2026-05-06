@@ -978,3 +978,60 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("--volumes is forwarded alongside interactive persistence mounts", () => {
+  // In interactive (PTY, no -p, no --ephemeral) mode the CLI creates the
+  // .harness/<agent>/ persistence directory and adds its mount(s) to docker
+  // args. Lock down here that user-supplied --volumes are appended AFTER the
+  // persist mounts and BOTH land in the final docker invocation so a future
+  // refactor cannot accidentally drop one path when the other is in play.
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) {
+    return; // skip on platforms without `script`.
+  }
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const extraDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-vol-persist-"),
+  );
+  try {
+    const r = spawnSync(
+      "script",
+      ["-qfec", `node ${CLI} --volumes ${extraDir}:/mnt/data`, "/dev/null"],
+      {
+        cwd: localWork,
+        env: {
+          ...process.env,
+          PATH: `${SHIM_DIR}:${process.env.PATH}`,
+          HARNESS_IMAGE_TAG: "test-tag",
+        },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(r.status, 0, r.stderr);
+
+    // interactive non-ephemeral path created the persist dir
+    assert.equal(
+      fs.existsSync(path.join(localWork, ".harness", "pi")),
+      true,
+      ".harness/pi/ should be created in interactive mode",
+    );
+
+    const cleaned = r.stdout.replace(/\r/g, "");
+    const a = dockerArgs(cleaned);
+    assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
+    // persist mount target must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.pi/agent")),
+      `expected persist mount in: ${a.join(" ")}`,
+    );
+    // user volume must also be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount alongside persist: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
