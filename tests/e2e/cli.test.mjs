@@ -978,3 +978,45 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("skills path that is a regular file (not directory) is silently skipped", () => {
+  // The skills mount loop only mounts a path when it both exists AND is a
+  // directory (`fs.statSync(sd.host).isDirectory()`). Lock down the negative
+  // case: if the user has a regular file at ~/.agents/skills (e.g. a leftover
+  // file from a prior incompatible layout), the CLI must NOT pass it as a
+  // -v mount to docker. Otherwise docker would mount a file at a path that
+  // /home/harness expects to be a directory and the container would either
+  // error or worse, hide other content.
+  const { home, cleanup } = makeSkillsHome();
+  // Create ~/.agents/skills as a FILE (not a directory).
+  fs.mkdirSync(path.join(home, ".agents"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, ".agents", "skills"),
+    "this is a file, not a skills directory\n",
+  );
+  // Also create a real .claude/skills DIR so we can confirm the directory
+  // path still mounts and only the file path is skipped.
+  fs.mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+  try {
+    const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // The .agents/skills FILE must NOT be mounted.
+    assert.equal(
+      a.some((arg) => arg.includes("/.agents/skills")),
+      false,
+      `regular file at ~/.agents/skills must not be mounted; got: ${a.join(" ")}`,
+    );
+
+    // The real .claude/skills DIR must still mount, proving the loop didn't
+    // bail wholesale and only the non-directory entry was skipped.
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.claude/skills")),
+      `existing .claude/skills directory must still mount: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
