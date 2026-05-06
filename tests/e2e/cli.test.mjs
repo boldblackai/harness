@@ -978,3 +978,47 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+test("--no-skills and --volumes are independent flags (skills suppressed, user volume forwarded)", () => {
+  // The two v1.6.x mount-shaping flags are orthogonal: --no-skills
+  // suppresses the skills mounts, --volumes appends a user mount.
+  // Lock that BOTH effects fire when the flags are passed together,
+  // so a future refactor that conflates them (e.g. shared codepath
+  // accidentally short-circuits one when the other is set) breaks.
+  const { home, cleanup } = makeSkillsHome();
+  fs.mkdirSync(path.join(home, ".agents", "skills"), { recursive: true });
+  fs.mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+  const extraDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-noskills-vol-"),
+  );
+  try {
+    const r = runCli(
+      ["--no-skills", "-p", "noop", "--volumes", `${extraDir}:/mnt/data`],
+      { extraEnv: { HOME: home } },
+    );
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // --no-skills must suppress BOTH skills mounts even though the dirs exist.
+    assert.equal(
+      a.some((arg) => arg.includes("/.agents/skills")),
+      false,
+      `--no-skills must suppress .agents/skills; got: ${a.join(" ")}`,
+    );
+    assert.equal(
+      a.some((arg) => arg.includes("/.claude/skills")),
+      false,
+      `--no-skills must suppress .claude/skills; got: ${a.join(" ")}`,
+    );
+
+    // --volumes user mount must STILL pass through.
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount alongside --no-skills: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
