@@ -1036,7 +1036,6 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
   }
 });
 
-
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
   // file:/workspace/<basename> mount. Locking down here that user-supplied
@@ -1119,7 +1118,6 @@ test("skills path that is a regular file (not directory) is silently skipped", (
   }
 });
 
-
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
   // file:/workspace/<basename> mount. Locking down here that user-supplied
@@ -1198,7 +1196,6 @@ test("--volumes coexists with skills mounts and the workspace mount (no interfer
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
-
 
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
@@ -1283,7 +1280,6 @@ test("--no-skills and --volumes are independent flags (skills suppressed, user v
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
-
 
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
@@ -1381,7 +1377,6 @@ test("--volumes appears after built-in mounts in docker args (last-wins override
   }
 });
 
-
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
   // file:/workspace/<basename> mount. Locking down here that user-supplied
@@ -1478,7 +1473,6 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
   }
 });
 
-
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
   // file:/workspace/<basename> mount. Locking down here that user-supplied
@@ -1557,7 +1551,6 @@ test("hermes: prompt is forwarded as `hermes chat -q <prompt>` (NOT -p)", () => 
     `hermes must use -q, not -p; got tail: ${tail.join(" ")}`,
   );
 });
-
 
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
   // --file replaces the default cwd:/workspace mount with a single
