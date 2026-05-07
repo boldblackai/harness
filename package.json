@@ -5,9 +5,7 @@
   "bin": {
     "harness": "bin/harness.js"
   },
-  "files": [
-    "bin/"
-  ],
+  "files": ["bin/"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/capotej/harness.git"
