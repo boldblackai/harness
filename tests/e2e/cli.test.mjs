@@ -1035,3 +1035,604 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
 });
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("skills path that is a regular file (not directory) is silently skipped", () => {
+  // The skills mount loop only mounts a path when it both exists AND is a
+  // directory (`fs.statSync(sd.host).isDirectory()`). Lock down the negative
+  // case: if the user has a regular file at ~/.agents/skills (e.g. a leftover
+  // file from a prior incompatible layout), the CLI must NOT pass it as a
+  // -v mount to docker. Otherwise docker would mount a file at a path that
+  // /home/harness expects to be a directory and the container would either
+  // error or worse, hide other content.
+  const { home, cleanup } = makeSkillsHome();
+  // Create ~/.agents/skills as a FILE (not a directory).
+  fs.mkdirSync(path.join(home, ".agents"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, ".agents", "skills"),
+    "this is a file, not a skills directory\n",
+  );
+  // Also create a real .claude/skills DIR so we can confirm the directory
+  // path still mounts and only the file path is skipped.
+  fs.mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+  try {
+    const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // The .agents/skills FILE must NOT be mounted.
+    assert.equal(
+      a.some((arg) => arg.includes("/.agents/skills")),
+      false,
+      `regular file at ~/.agents/skills must not be mounted; got: ${a.join(" ")}`,
+    );
+
+    // The real .claude/skills DIR must still mount, proving the loop didn't
+    // bail wholesale and only the non-directory entry was skipped.
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.claude/skills")),
+      `existing .claude/skills directory must still mount: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("--volumes coexists with skills mounts and the workspace mount (no interference)", () => {
+  // Three-way: an existing user skills directory at ~/.agents/skills, a
+  // user --volumes spec, and the default cwd:/workspace mount must all
+  // pass through to docker simultaneously. Locks the contract that none
+  // of these orthogonal mount sources interfere with each other.
+  const { home, cleanup } = makeSkillsHome();
+  fs.mkdirSync(path.join(home, ".agents", "skills"), { recursive: true });
+  const extraDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-vol-skills-"),
+  );
+  try {
+    const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/mnt/data`], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // Workspace mount.
+    assert.ok(
+      a.includes(`${WORK_DIR}:/workspace`),
+      `expected workspace mount in: ${a.join(" ")}`,
+    );
+    // Skills mount.
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.agents/skills")),
+      `expected .agents/skills mount in: ${a.join(" ")}`,
+    );
+    // User volume.
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("--no-skills and --volumes are independent flags (skills suppressed, user volume forwarded)", () => {
+  // The two v1.6.x mount-shaping flags are orthogonal: --no-skills
+  // suppresses the skills mounts, --volumes appends a user mount.
+  // Lock that BOTH effects fire when the flags are passed together,
+  // so a future refactor that conflates them (e.g. shared codepath
+  // accidentally short-circuits one when the other is set) breaks.
+  const { home, cleanup } = makeSkillsHome();
+  fs.mkdirSync(path.join(home, ".agents", "skills"), { recursive: true });
+  fs.mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+  const extraDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-noskills-vol-"),
+  );
+  try {
+    const r = runCli(
+      ["--no-skills", "-p", "noop", "--volumes", `${extraDir}:/mnt/data`],
+      { extraEnv: { HOME: home } },
+    );
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // --no-skills must suppress BOTH skills mounts even though the dirs exist.
+    assert.equal(
+      a.some((arg) => arg.includes("/.agents/skills")),
+      false,
+      `--no-skills must suppress .agents/skills; got: ${a.join(" ")}`,
+    );
+    assert.equal(
+      a.some((arg) => arg.includes("/.claude/skills")),
+      false,
+      `--no-skills must suppress .claude/skills; got: ${a.join(" ")}`,
+    );
+
+    // --volumes user mount must STILL pass through.
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount alongside --no-skills: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("--volumes appears after built-in mounts in docker args (last-wins override capability)", () => {
+  // Docker's `-v` flag has "last wins" semantics for overlapping target
+  // paths. The CLI assembles docker args as `...volumeArgs, ...userVolumeArgs`
+  // (src/harness.ts:508-509), so user-supplied --volumes are appended AFTER
+  // built-in mounts (workspace, skills, persist). This gives a real capability:
+  // a user can override the default workspace mount with
+  // `--volumes /tmp/sandbox:/workspace`, or shadow a skills directory with
+  // `--volumes /tmp/empty:/home/harness/.agents/skills`.
+  //
+  // Lock that ordering boundary: a future refactor that prepends user volumes
+  // (...userVolumeArgs, ...volumeArgs) would silently strip the override
+  // capability, since the trailing built-in mount would now win.
+  const { home, cleanup } = makeSkillsHome();
+  fs.mkdirSync(path.join(home, ".agents", "skills"), { recursive: true });
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-order-"));
+  try {
+    const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/mnt/data`], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+
+    // Find the index of each mount target's `-v` flag. We look for the
+    // index of the value (e.g. `${WORK_DIR}:/workspace`) and assume `-v`
+    // is at index-1.
+    const workspaceIdx = a.indexOf(`${WORK_DIR}:/workspace`);
+    const skillsIdx = a.findIndex((arg) =>
+      arg.endsWith(":/home/harness/.agents/skills"),
+    );
+    const userIdx = a.indexOf(`${extraDir}:/mnt/data`);
+
+    assert.notEqual(
+      workspaceIdx,
+      -1,
+      `workspace mount missing: ${a.join(" ")}`,
+    );
+    assert.notEqual(skillsIdx, -1, `skills mount missing: ${a.join(" ")}`);
+    assert.notEqual(userIdx, -1, `user volume missing: ${a.join(" ")}`);
+
+    // User volume index must be strictly greater than every built-in
+    // mount index, so docker's last-wins resolution favors the user.
+    assert.ok(
+      userIdx > workspaceIdx,
+      `--volumes must appear AFTER workspace mount; user@${userIdx} workspace@${workspaceIdx} args=${a.join(" ")}`,
+    );
+    assert.ok(
+      userIdx > skillsIdx,
+      `--volumes must appear AFTER skills mount; user@${userIdx} skills@${skillsIdx} args=${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("hermes interactive (no --ephemeral) creates both persistence dirs and mounts", () => {
+  // HermesAdapter.persistMounts() returns two distinct mounts:
+  //   - local      -> /home/harness/.hermes-local
+  //   - openrouter -> /home/harness/.hermes-openrouter
+  //
+  // The pi adapter test only locks a single empty-hostSubpath mount and
+  // PR #30 (mine, merged) locks the opencode 3-mount shape. This is the
+  // analog test for hermes\'s 2-mount shape so a future refactor cannot
+  // silently drop one of the two hermes persistence buckets.
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) {
+    return; // skip on platforms without `script`.
+  }
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const r = spawnSync(
+    "script",
+    ["-qfec", `node ${CLI} -a hermes`, "/dev/null"],
+    {
+      cwd: localWork,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(r.status, 0, r.stderr);
+
+  // Both host-side persistence buckets must be created.
+  for (const sub of ["local", "openrouter"]) {
+    assert.equal(
+      fs.existsSync(path.join(localWork, ".harness", "hermes", sub)),
+      true,
+      `.harness/hermes/${sub}/ should be created in interactive mode`,
+    );
+  }
+
+  // Both docker -v mounts must target the documented container paths.
+  const cleaned = r.stdout.replace(/\r/g, "");
+  const a = dockerArgs(cleaned);
+  assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
+  const targets = [
+    "/home/harness/.hermes-local",
+    "/home/harness/.hermes-openrouter",
+  ];
+  for (const t of targets) {
+    assert.ok(
+      a.some((arg) => arg.endsWith(`:${t}`)),
+      `expected -v mount ending in :${t} in: ${a.join(" ")}`,
+    );
+  }
+});
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("hermes: prompt is forwarded as `hermes chat -q <prompt>` (NOT -p)", () => {
+  // HermesAdapter.buildCommand emits ["hermes","chat"] + ["-m", model] (if model)
+  // + ["-q", prompt] (if prompt). The existing hermes test only locks the
+  // no-model + no-prompt case ['hermes','chat']. Lock the prompt-forwarding
+  // shape: it must be -q, NOT -p (-p is the pi flag), and the prompt must
+  // immediately follow -q.
+  //
+  // Also lock the ordering when BOTH -m and -p are provided:
+  // ["hermes","chat","-m","<model>","-q","<prompt>"]
+  const r = runCli([
+    "-a",
+    "hermes",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "-p",
+    "summarize",
+  ]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+
+  const hermesIdx = a.indexOf("hermes");
+  assert.notEqual(hermesIdx, -1, `expected 'hermes' in: ${a.join(" ")}`);
+  // The container command tail must be exactly: hermes chat -m MODEL -q PROMPT
+  const tail = a.slice(hermesIdx);
+  assert.deepEqual(
+    tail,
+    ["hermes", "chat", "-m", "anthropic/claude-sonnet-4-5", "-q", "summarize"],
+    `unexpected hermes tail: ${tail.join(" ")}`,
+  );
+
+  // And -p (the pi flag) must NOT appear in the hermes container cmd.
+  assert.equal(
+    tail.includes("-p"),
+    false,
+    `hermes must use -q, not -p; got tail: ${tail.join(" ")}`,
+  );
+});
+
+
+test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
+  // --file replaces the default cwd:/workspace mount with a single
+  // file:/workspace/<basename> mount. Locking down here that user-supplied
+  // --volumes still land in the docker args next to the file mount, so a
+  // user can `harness --file script.py --volumes ~/secrets:/home/harness/.config/x`
+  // for credentials without losing the file mount or vice versa.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-file-"));
+  try {
+    const r = runCli([
+      "--file",
+      SAMPLE_FILE,
+      "--volumes",
+      `${extraDir}:/mnt/data`,
+      "-p",
+      "noop",
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // file mount must be present
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected --file mount in: ${a.join(" ")}`,
+    );
+    // user volume must be present
+    assert.ok(
+      a.includes(`${extraDir}:/mnt/data`),
+      `expected --volumes mount in: ${a.join(" ")}`,
+    );
+    // default cwd:/workspace mount must NOT be present (file mode replaces it)
+    assert.equal(
+      a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+      false,
+      `--file mode must not mount cwd:/workspace; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
+
+test("image tag mapping: pi gets bare tag, opencode/hermes get adapter-prefixed tags", () => {
+  // getImage() at src/harness.ts has an asymmetric rule:
+  //   pi       -> ghcr.io/capotej/harness:<TAG>
+  //   opencode -> ghcr.io/capotej/harness:opencode-<TAG>
+  //   hermes   -> ghcr.io/capotej/harness:hermes-<TAG>
+  //
+  // The existing test at line 309 (`opencode: image tag is "opencode-<version>"`)
+  // only covers the opencode prefix path. Lock the **full mapping** here so
+  // a future refactor can\'t accidentally:
+  //   - add a "pi-" prefix to pi (which would break every existing pi user)
+  //   - drop the prefix for opencode/hermes (which would map all 3 agents
+  //     to the same image)
+  const cases = [
+    { agent: "pi", expectedTag: "test-tag" },
+    { agent: "opencode", expectedTag: "opencode-test-tag" },
+    { agent: "hermes", expectedTag: "hermes-test-tag" },
+  ];
+  for (const { agent, expectedTag } of cases) {
+    const r = runCli(["-a", agent, "-p", "noop"], {
+      extraEnv: { HARNESS_IMAGE_TAG: "test-tag" },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, `expected DOCKER_INVOKED line for ${agent}`);
+    const expectedImage = `ghcr.io/capotej/harness:${expectedTag}`;
+    assert.ok(
+      a.includes(expectedImage),
+      `expected image '${expectedImage}' for agent '${agent}' in: ${a.join(" ")}`,
+    );
+    // Negative: the pi-prefixed form must NEVER appear.
+    assert.equal(
+      a.some((arg) => arg.startsWith("ghcr.io/capotej/harness:pi-")),
+      false,
+      `pi must never get a 'pi-' prefix; got: ${a.join(" ")}`,
+    );
+  }
+});
