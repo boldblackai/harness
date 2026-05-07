@@ -95,9 +95,7 @@ Run with: `pnpm test:e2e` (requires `pnpm build` first).
 
 ### Coverage
 
-Run with: `pnpm test:coverage` (requires `pnpm build` first).
-
-Enforces 80% thresholds for line, branch, and function coverage via Node.js built-in `--experimental-test-coverage`. CI runs coverage on all PRs to `main` (`.github/workflows/coverage.yml`).
+The e2e workflow enforces 80% line/branch/function coverage thresholds via Node.js built-in `--experimental-test-coverage`. Locally, run: `pnpm test:coverage` (requires `pnpm build` first).
 
 ## Rules
 
