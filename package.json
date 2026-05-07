@@ -5,7 +5,9 @@
   "bin": {
     "harness": "bin/harness.js"
   },
-  "files": ["bin/"],
+  "files": [
+    "bin/"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/capotej/harness.git"
@@ -26,7 +28,8 @@
     "lint:actions": "actionlint",
     "format": "biome format --write .",
     "test:e2e:cli": "node --test tests/e2e/cli.test.mjs",
-    "test:e2e": "node --test tests/e2e/cli.test.mjs"
+    "test:e2e": "node --test tests/e2e/cli.test.mjs",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 tests/e2e/cli.test.mjs"
   },
   "dependencies": {
     "minimist": "^1.2.8"

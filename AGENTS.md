@@ -93,6 +93,12 @@ E2E tests in `tests/e2e/cli.test.mjs` use a docker shim (a fake `docker` binary 
 
 Run with: `pnpm test:e2e` (requires `pnpm build` first).
 
+### Coverage
+
+Run with: `pnpm test:coverage` (requires `pnpm build` first).
+
+Enforces 80% thresholds for line, branch, and function coverage via Node.js built-in `--experimental-test-coverage`. CI runs coverage on all PRs to `main` (`.github/workflows/coverage.yml`).
+
 ## Rules
 
 - Keep `README.md` and `AGENTS.md` updated when changing CLI flags, options, architecture, Dockerfiles, CI workflows, or any behavior. If you change how something works, update both files to reflect it.

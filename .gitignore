@@ -3,3 +3,4 @@ bin/harness.js
 bin/harness.d.ts
 bin/harness.js.map
 .harness
+coverage/
