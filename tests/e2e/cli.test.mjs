@@ -1629,3 +1629,205 @@ test("image tag mapping: pi gets bare tag, opencode/hermes get adapter-prefixed 
     );
   }
 });
+
+// ----------------------------------------------------------------------------
+// v1.7.x coverage bump (bundled to avoid the cli.test.mjs tail-append rebase
+// chain that #47-#57 hit). All blocks below are pure tail-appends and exercise
+// distinct, currently-uncovered behaviors of the shipped CLI as of c86e6f9.
+// ----------------------------------------------------------------------------
+
+test("default agent (no -a/--agent) is pi and image tag has no adapter prefix", () => {
+  // Locks: src/harness.ts default agent fallback (`argv.agent ?? "pi"`)
+  // AND getImage() pi-bare-tag asymmetry. PR #55 covered the per-adapter
+  // mapping when -a is explicit; this covers the *default* (no flag) path.
+  const r = runCli(["-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  // Image must be the bare-tag form, not opencode-* or hermes-*.
+  const image = a.find((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  assert.ok(image, `expected image arg in: ${a.join(" ")}`);
+  assert.ok(
+    !/opencode-|hermes-/.test(image),
+    `default agent should produce bare-tag image, got: ${image}`,
+  );
+  // Container cmd must start with the pi binary.
+  const piIdx = a.indexOf("pi");
+  assert.notEqual(piIdx, -1, "expected 'pi' in container cmd");
+});
+
+test("-a short alias selects the agent (parity with --agent)", () => {
+  // The minimist alias map declares { a: "agent" }. PR #25 tested -a hermes
+  // implicitly via runCli(["-a", "hermes", ...]) but never asserted that
+  // the short form is *equivalent* to --agent. Lock that explicitly so a
+  // future change that only handles --agent (long form) gets caught.
+  const rShort = runCli(["-a", "hermes", "-p", "noop"]);
+  const rLong = runCli(["--agent", "hermes", "-p", "noop"]);
+  assert.equal(rShort.status, 0, rShort.stderr);
+  assert.equal(rLong.status, 0, rLong.stderr);
+  const aShort = dockerArgs(rShort.stdout);
+  const aLong = dockerArgs(rLong.stdout);
+  // Both must produce the same hermes-prefixed image and same container
+  // command shape (slice from "hermes" forward).
+  const imgShort = aShort.find((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  const imgLong = aLong.find((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  assert.equal(
+    imgShort,
+    imgLong,
+    "image tag should match between -a and --agent",
+  );
+  assert.match(
+    imgShort,
+    /hermes-/,
+    `expected hermes-prefixed image, got ${imgShort}`,
+  );
+  const idxShort = aShort.indexOf("hermes");
+  const idxLong = aLong.indexOf("hermes");
+  assert.deepEqual(aShort.slice(idxShort), aLong.slice(idxLong));
+});
+
+test("--agent=hermes (equals form) selects the agent", () => {
+  // minimist accepts both `--agent X` and `--agent=X`. The equals form is
+  // common in shell pipelines and CI configs. Lock it.
+  const r = runCli(["--agent=hermes", "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  const idx = a.indexOf("hermes");
+  assert.notEqual(idx, -1, `expected 'hermes' in: ${a.join(" ")}`);
+  // hermes adapter shape: hermes chat -q <prompt>
+  assert.deepEqual(a.slice(idx, idx + 2), ["hermes", "chat"]);
+});
+
+test("opencode: prompt is forwarded as `opencode run <prompt>`", () => {
+  // Symmetric to the merged hermes-prompt-shape test (#54) and the
+  // pi -p test. OpenCodeAdapter.buildCommand returns
+  //   ["opencode", "run", prompt]   when prompt !== null
+  //   ["opencode"]                   when prompt === null
+  // No prior test asserts the `run` subcommand position. Lock it.
+  const r = runCli(["-a", "opencode", "-p", "summarize"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  const idx = a.indexOf("opencode");
+  assert.notEqual(idx, -1);
+  // opencode adapter must emit exactly: opencode run summarize
+  // (no stray flags between binary and subcommand).
+  const tail = a.slice(idx);
+  assert.deepEqual(
+    tail,
+    ["opencode", "run", "summarize"],
+    `unexpected opencode tail: ${tail.join(" ")}`,
+  );
+});
+
+test("piped stdin uses -i flag (no -t, no combined -it)", () => {
+  // src/harness.ts: `const ttyFlags = interactive ? ["-it"] : ["-i"];`
+  // When stdin is a pipe (the common CI / scripting case), the CLI must
+  // emit a bare `-i`, never the combined `-it` (which would force a TTY
+  // and break some shells). No existing test pins down the exact flag
+  // shape on the no-TTY branch.
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  try {
+    const r = spawnSync("node", [CLI], {
+      cwd: localWork,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+      },
+      input: "piped prompt\n",
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(a.includes("-i"), `expected -i in: ${a.join(" ")}`);
+    assert.ok(
+      !a.includes("-it"),
+      `piped stdin must not produce combined -it: ${a.join(" ")}`,
+    );
+    assert.ok(
+      !a.includes("-t"),
+      `piped stdin must not produce -t: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(localWork, { recursive: true, force: true });
+  }
+});
+
+test("image arg immediately precedes the container command", () => {
+  // Ordering invariant: the docker positional arg list ends with
+  //   ... <image> <agent-binary> [args...]
+  // where <agent-binary> is the first element of adapter.buildCommand().
+  // No existing test pins this ordering, but reordering would be a real
+  // regression (docker would treat the binary as the image).
+  const r = runCli(["-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  const imgIdx = a.findIndex((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  assert.notEqual(imgIdx, -1, "expected an image arg");
+  // The token immediately after the image must be the agent binary
+  // (start of the adapter's container command).
+  assert.equal(
+    a[imgIdx + 1],
+    "pi",
+    `expected pi binary right after image; got: ${a.slice(imgIdx, imgIdx + 3).join(" ")}`,
+  );
+  // And the image must NOT appear earlier among the docker flags
+  // (sanity: only one image arg, in the right slot).
+  const firstImgIdx = a.indexOf(a[imgIdx]);
+  assert.equal(firstImgIdx, imgIdx, "image should appear exactly once");
+});
+
+test('empty --volumes "" is silently coerced to no-volume (falsy-empty branch)', () => {
+  // src/harness.ts initializes the volume list as
+  //   Array.isArray(argv.volumes) ? argv.volumes
+  //     : argv.volumes ? [argv.volumes]
+  //     : [];
+  // An empty string is JS-falsy so it falls into the `[]` branch and skips
+  // the per-spec validation entirely. This is the right behavior for shell
+  // scripts that build flags via expansion (e.g. `--volumes "$EXTRA_VOL"`
+  // where EXTRA_VOL may be unset) - it should be a no-op, not a fatal
+  // error. Lock the no-op behavior so a future stricter-validation pass
+  // doesn't silently break script callers.
+  const r = runCli(["--volumes", "", "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  // No malformed empty-suffix mount string was added.
+  assert.ok(
+    !a.some((x) => x === ":" || x.endsWith(":") || x.startsWith(":")),
+    `expected no malformed empty mount; got: ${a.join(" ")}`,
+  );
+  // The workspace mount must still be present (default behavior intact).
+  const vIdx = a.indexOf("-v");
+  assert.notEqual(vIdx, -1);
+  assert.equal(a[vIdx + 1], `${WORK_DIR}:/workspace`);
+});
+
+test("--volumes with multi-colon options preserves the full option suffix", () => {
+  // src/harness.ts builds the docker mount string as
+  //   `${path.resolve(parts[0])}:${parts.slice(1).join(":")}`
+  // i.e. it rejoins everything after the first colon back together. This
+  // matters for docker mounts with multiple options like `:ro,Z` or
+  // `:rw,delegated`, and for SELinux-relabel forms `:Z`. Existing tests
+  // cover single-option `:ro` (line ~873). Multi-segment options (more
+  // than one ":" in the suffix) exercise the slice/join contract.
+  const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-vol-"));
+  try {
+    const spec = `${extraDir}:/opt/thing:ro:Z`;
+    const r = runCli(["-p", "noop", "--volumes", spec]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    // The full suffix `:/opt/thing:ro:Z` must be preserved verbatim.
+    assert.ok(
+      a.includes(`${extraDir}:/opt/thing:ro:Z`),
+      `expected multi-option mount preserved; got: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(extraDir, { recursive: true, force: true });
+  }
+});
