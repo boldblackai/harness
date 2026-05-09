@@ -84,7 +84,7 @@ E2E tests in `tests/e2e/cli.test.mjs` use a docker shim (a fake `docker` binary 
 - Argument parsing and validation (`--help`, unknown agent, missing files)
 - Adapter behavior (pi, opencode, hermes command construction)
 - Image tag selection per agent
-- Security flags (`--cap-drop=ALL`, `--security-opt`, etc.)
+- Security flags (`--cap-drop=ALL`, `--security-opt`, seccomp AF_ALG block, etc.)
 - Persistence vs ephemeral behavior (TTY detection, `--ephemeral`, `-p`)
 - Volume mount construction (file vs directory, adapter-specific mount points)
 - `--env-file` forwarding across all adapters
