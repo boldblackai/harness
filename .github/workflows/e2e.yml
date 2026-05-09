@@ -37,4 +37,4 @@ jobs:
         run: pnpm build
 
       - name: Run CLI e2e tests
-        run: pnpm test:e2e:cli
+        run: pnpm test:coverage
