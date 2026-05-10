@@ -133,7 +133,10 @@ test("--help documents HARNESS_IMAGE_TAG environment variable", () => {
 test("unrecognized flags emit a warning on stderr", () => {
   const r = runCli(["--bogus-flag", "--another-fake", "-p", "noop"]);
   assert.equal(r.status, 0);
-  assert.match(r.stderr, /warning: unrecognized flag\(s\): --bogus-flag, --another-fake/);
+  assert.match(
+    r.stderr,
+    /warning: unrecognized flag\(s\): --bogus-flag, --another-fake/,
+  );
 });
 
 test("recognized flags do not emit a warning", () => {
