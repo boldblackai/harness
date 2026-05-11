@@ -588,7 +588,16 @@ test("interactive (PTY, no -p, no --ephemeral) creates XDG state persistence dir
     true,
     "XDG state dir for pi should be created in interactive mode without --ephemeral",
   );
-  // And the docker args must include a -v mount targeting /home/harness/.pi/agent.
+  // Universal XDG mounts (xdg-data, xdg-state) must also be created.
+  for (const sub of ["xdg-data", "xdg-state"]) {
+    assert.equal(
+      fs.existsSync(path.join(persistDir(localWork, "pi", env), sub)),
+      true,
+      `pi/${sub}/ should be created in interactive mode`,
+    );
+  }
+  // And the docker args must include a -v mount targeting /home/harness/.pi/agent,
+  // plus the universal XDG data/state mounts.
   const cleaned = r.stdout.replace(/\r/g, "");
   const a = dockerArgs(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
@@ -598,6 +607,15 @@ test("interactive (PTY, no -p, no --ephemeral) creates XDG state persistence dir
     hasMount,
     `expected a -v mount ending in :${mountTarget} in: ${a.join(" ")}`,
   );
+  for (const xdgTarget of [
+    "/home/harness/.local/share",
+    "/home/harness/.local/state",
+  ]) {
+    assert.ok(
+      a.some((arg) => arg.endsWith(`:${xdgTarget}`)),
+      `expected a -v mount ending in :${xdgTarget} in: ${a.join(" ")}`,
+    );
+  }
 });
 
 test("--ephemeral overrides interactive PTY: no XDG state dir, no persist mount", () => {
@@ -696,16 +714,17 @@ test("piped whitespace-only stdin takes no-prompt branch (pi has no -p)", () => 
   );
 });
 
-test("opencode interactive (no --ephemeral) creates all three persistence dirs and mounts", () => {
-  // OpenCodeAdapter.persistMounts() returns three distinct mounts:
-  //   - config -> /home/harness/.config/opencode
-  //   - share  -> /home/harness/.local/share/opencode
-  //   - state  -> /home/harness/.local/state/opencode
+test("opencode interactive (no --ephemeral) creates persistence dirs and mounts including XDG", () => {
+  // OpenCodeAdapter.persistMounts() returns one mount (config) and the
+  // universal XDG mounts (xdg-data, xdg-state) are added for all adapters:
+  //   - config   -> /home/harness/.config/opencode
+  //   - xdg-data -> /home/harness/.local/share      (mise tools, etc.)
+  //   - xdg-state -> /home/harness/.local/state      (mise trust, etc.)
   //
   // The pi adapter test only locks a single empty-hostSubpath mount. This
   // test locks the multi-mount shape so a future refactor can't silently
-  // drop one of the three OpenCode persistence buckets (which would lose
-  // user history / config across container runs).
+  // drop one of the persistence buckets (which would lose user history /
+  // config across container runs).
   const which = spawnSync("sh", ["-c", "command -v script"], {
     encoding: "utf8",
   });
@@ -731,23 +750,31 @@ test("opencode interactive (no --ephemeral) creates all three persistence dirs a
   );
   assert.equal(r.status, 0, r.stderr);
 
-  // All three host-side persistence buckets must be created.
-  for (const sub of ["config", "share", "state"]) {
+  // Adapter-specific config dir must be created.
+  const opencodeRoot = persistDir(localWork, "opencode", env);
+  assert.equal(
+    fs.existsSync(path.join(opencodeRoot, "config")),
+    true,
+    "opencode/config/ should be created in interactive mode",
+  );
+
+  // Universal XDG dirs must be created (xdg-data, xdg-state).
+  for (const sub of ["xdg-data", "xdg-state"]) {
     assert.equal(
-      fs.existsSync(path.join(persistDir(localWork, "opencode", env), sub)),
+      fs.existsSync(path.join(opencodeRoot, sub)),
       true,
-      `XDG state dir opencode/${sub}/ should be created in interactive mode`,
+      `opencode/${sub}/ should be created in interactive mode`,
     );
   }
 
-  // All three docker -v mounts must target the documented container paths.
+  // Docker -v mounts must target the documented container paths.
   const cleaned = r.stdout.replace(/\r/g, "");
   const a = dockerArgs(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   const targets = [
     "/home/harness/.config/opencode",
-    "/home/harness/.local/share/opencode",
-    "/home/harness/.local/state/opencode",
+    "/home/harness/.local/share",
+    "/home/harness/.local/state",
   ];
   for (const t of targets) {
     assert.ok(

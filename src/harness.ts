@@ -81,14 +81,6 @@ class OpenCodeAdapter implements AgentAdapter {
         hostSubpath: "config",
         containerPath: "/home/harness/.config/opencode",
       },
-      {
-        hostSubpath: "share",
-        containerPath: "/home/harness/.local/share/opencode",
-      },
-      {
-        hostSubpath: "state",
-        containerPath: "/home/harness/.local/state/opencode",
-      },
     ];
   }
 }
@@ -502,8 +494,29 @@ async function run(prompt: string | null): Promise<void> {
     volumeArgs = ["-v", `${workspace}:/workspace`];
     if (!effectiveEphemeral) {
       const persistRoot = path.join(persistBaseDir(workspace), agentName);
+
+      // Adapter-specific mounts (agent config, session state, etc.)
       const mounts = adapter.persistMounts?.() ?? [];
       for (const mount of mounts) {
+        const hostFullPath = path.join(persistRoot, mount.hostSubpath);
+        fs.mkdirSync(hostFullPath, { recursive: true });
+        volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
+      }
+
+      // XDG mounts — tools like mise store data under XDG_DATA_HOME and
+      // trust/state under XDG_STATE_HOME.  Mounting these makes installed
+      // tools and mise trust decisions persist across invocations.
+      const xdgMounts = [
+        {
+          hostSubpath: "xdg-data",
+          containerPath: "/home/harness/.local/share",
+        },
+        {
+          hostSubpath: "xdg-state",
+          containerPath: "/home/harness/.local/state",
+        },
+      ];
+      for (const mount of xdgMounts) {
         const hostFullPath = path.join(persistRoot, mount.hostSubpath);
         fs.mkdirSync(hostFullPath, { recursive: true });
         volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);

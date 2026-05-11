@@ -205,6 +205,8 @@ The cooldown applies to transitive dependencies too. Older packages install norm
 
 Interactive runs (no `-p` and no piped stdin) persist agent state under `XDG_STATE_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/state/harness/…`). The `<normalized-cwd>` is your working directory path relative to `$HOME` with slashes converted to dashes (e.g. `/home/user/myapp` → `myapp`).
 
+Additionally, `xdg-data` and `xdg-state` subdirectories are mounted to `/home/harness/.local/share` and `/home/harness/.local/state` inside the container. This means tools like **mise** automatically persist installed tools and trust decisions across invocations — no reinstalling on every run.
+
 One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence directories are created. Use `--ephemeral` to force-disable persistence on interactive runs.
 
 ## Reference
