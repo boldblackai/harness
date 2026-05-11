@@ -203,7 +203,7 @@ The cooldown applies to transitive dependencies too. Older packages install norm
 
 ## Persistence
 
-Interactive runs (no `-p` and no piped stdin) persist agent state under `XDG_STATE_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/state/harness/…`). The `<normalized-cwd>` is your working directory path with slashes converted to dashes (e.g. `/home/user/myapp` → `home-user-myapp`).
+Interactive runs (no `-p` and no piped stdin) persist agent state under `XDG_STATE_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/state/harness/…`). The `<normalized-cwd>` is your working directory path relative to `$HOME` with slashes converted to dashes (e.g. `/home/user/myapp` → `myapp`).
 
 One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence directories are created. Use `--ephemeral` to force-disable persistence on interactive runs.
 

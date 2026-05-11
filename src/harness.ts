@@ -134,12 +134,17 @@ function xdgStateDir(): string {
 }
 
 function persistBaseDir(workspacePath: string): string {
-  // Normalize the workspace path into a safe directory name:
-  //   /home/user/projects/myapp → home-user-projects-myapp
-  const normalized = workspacePath
-    .replace(/\/+$/, "")
-    .replace(/^\//, "")
-    .replace(/\//g, "-");
+  // Strip $HOME prefix, then normalize slashes to dashes:
+  //   /home/user/projects/myapp → projects-myapp
+  //   /tmp/harness-work → tmp-harness-work
+  const home = os.homedir();
+  let stripped = workspacePath;
+  if (stripped.startsWith(home + "/")) {
+    stripped = stripped.slice(home.length + 1);
+  } else {
+    stripped = stripped.replace(/^\/+/, "");
+  }
+  const normalized = stripped.replace(/\/+$/, "").replace(/\//g, "-");
   return path.join(xdgStateDir(), "harness", normalized);
 }
 

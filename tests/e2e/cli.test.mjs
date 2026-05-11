@@ -81,10 +81,14 @@ function xdgStateDir(env) {
 }
 
 function persistDir(workspacePath, agent, env = {}) {
-  const normalized = workspacePath
-    .replace(/\/+$/, "")
-    .replace(/^\//, "")
-    .replace(/\//g, "-");
+  const home = os.homedir();
+  let stripped = workspacePath;
+  if (stripped.startsWith(home + "/")) {
+    stripped = stripped.slice(home.length + 1);
+  } else {
+    stripped = stripped.replace(/^\/+/, "");
+  }
+  const normalized = stripped.replace(/\/+$/, "").replace(/\//g, "-");
   return path.join(xdgStateDir(env), "harness", normalized, agent);
 }
 
