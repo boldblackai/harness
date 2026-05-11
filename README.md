@@ -16,7 +16,7 @@ and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can poin
 - **Three agents, one CLI** — switch between `pi`, `opencode`, and `hermes` with `-a`. Same flags, same flow.
 - **Supply-chain hardened** — the image is signed and verified with cosign and SLSA provenance on every run; dependencies installed inside the container are always pinned and verified where possible and a 7-day "cooldown" is used to mitigate supply-chain attacks.
 - **Local-first** — defaults to LM Studio with `gemma-4-e4b`. Drop in an `--env-file` to use Anthropic, OpenRouter, OpenAI, Gemini, and others.
-- **Stateful or one-shot** — interactive runs persist agent state under `.harness/<agent>/`; one-shot prompts (`-p` or piped stdin) stay ephemeral.
+- **Stateful or one-shot** — interactive runs persist agent state under `XDG_STATE_HOME/harness/<cwd>/<agent>/` (defaults to `~/.local/state/harness/…`); one-shot prompts (`-p` or piped stdin) stay ephemeral.
 - **User skills** — automatically mounts `~/.agents/skills` and `~/.claude/skills` into the container so agents can discover and use custom skills. Disable with `--no-skills`.
 - **Zero install** — `npx @capotej/harness` just works.
 
@@ -95,7 +95,7 @@ npx @capotej/harness -p "write me a fizzbuzz in Go"
 # Pipe via stdin
 echo "write me a fizzbuzz in Go" | npx @capotej/harness
 
-# Interactive session (no -p, no piped stdin) — state persists under .harness/
+# Interactive session (no -p, no piped stdin) — state persists under XDG_STATE_HOME
 npx @capotej/harness
 
 # Use a cloud provider via env file
@@ -203,11 +203,9 @@ The cooldown applies to transitive dependencies too. Older packages install norm
 
 ## Persistence
 
-Interactive runs (no `-p` and no piped stdin) bind-mount `.harness/<agent>/` from your working directory into the container. This lets agents resume sessions, skip database migrations on repeat runs, and retain memories across invocations.
+Interactive runs (no `-p` and no piped stdin) persist agent state under `XDG_STATE_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/state/harness/…`). The `<normalized-cwd>` is your working directory path with slashes converted to dashes (e.g. `/home/user/myapp` → `home-user-myapp`). This keeps your project working tree clean — no `.harness/` directory is created inside it.
 
-One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no `.harness/` directory is created. Use `--ephemeral` to force-disable persistence on interactive runs.
-
-Add `.harness/` to your `.gitignore`.
+One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence directories are created. Use `--ephemeral` to force-disable persistence on interactive runs.
 
 ## Reference
 

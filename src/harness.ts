@@ -127,6 +127,17 @@ interface CacheFile {
 
 const CACHE_VERSION = 1;
 
+function xdgStateDir(): string {
+  return process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
+}
+
+function persistBaseDir(workspacePath: string): string {
+  // Normalize the workspace path into a safe directory name:
+  //   /home/user/projects/myapp → home-user-projects-myapp
+  const normalized = workspacePath.replace(/\/+$/, "").replace(/^\//, "").replace(/\//g, "-");
+  return path.join(xdgStateDir(), "harness", normalized);
+}
+
 function cachePath(): string {
   const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
   return path.join(base, "harness", "cosign-verified.json");
@@ -480,7 +491,7 @@ async function run(prompt: string | null): Promise<void> {
   } else {
     volumeArgs = ["-v", `${workspace}:/workspace`];
     if (!effectiveEphemeral) {
-      const persistRoot = path.join(workspace, ".harness", agentName);
+      const persistRoot = path.join(persistBaseDir(workspace), agentName);
       const mounts = adapter.persistMounts?.() ?? [];
       for (const mount of mounts) {
         const hostFullPath = path.join(persistRoot, mount.hostSubpath);

@@ -76,6 +76,18 @@ function dockerArgs(stdout) {
   return line.replace("DOCKER_INVOKED ", "").split(" ").filter(Boolean);
 }
 
+function xdgStateDir(env) {
+  return env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
+}
+
+function persistDir(workspacePath, agent, env = {}) {
+  const normalized = workspacePath
+    .replace(/\/+$/, "")
+    .replace(/^\//, "")
+    .replace(/\//g, "-");
+  return path.join(xdgStateDir(env), "harness", normalized, agent);
+}
+
 before(() => {
   ensureBuilt();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-"));
@@ -487,39 +499,45 @@ test("docker invocation always includes hardening flags", () => {
 
 // ---- persistence behaviour --------------------------------------------------
 
-test("one-shot run (-p) is implicitly ephemeral: no .harness/ dir created", () => {
+test("one-shot run (-p) is implicitly ephemeral: no XDG state dir created", () => {
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync("node", [CLI, "-p", "noop"], {
     cwd: localWork,
-    env: {
-      ...process.env,
-      PATH: `${SHIM_DIR}:${process.env.PATH}`,
-      HARNESS_IMAGE_TAG: "test-tag",
-    },
+    env,
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(
-    fs.existsSync(path.join(localWork, ".harness")),
+    fs.existsSync(persistDir(localWork, "pi", env)),
     false,
-    ".harness/ should NOT be created for one-shot runs",
+    "XDG state dir should NOT be created for one-shot runs",
   );
 });
 
 test("piped stdin is implicitly ephemeral and forwards prompt", () => {
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync("node", [CLI], {
     cwd: localWork,
-    env: {
-      ...process.env,
-      PATH: `${SHIM_DIR}:${process.env.PATH}`,
-      HARNESS_IMAGE_TAG: "test-tag",
-    },
+    env,
     input: "piped prompt\n",
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(fs.existsSync(path.join(localWork, ".harness")), false);
+  assert.equal(fs.existsSync(persistDir(localWork, "pi", env)), false);
   const a = dockerArgs(r.stdout);
   // pi adapter receives the piped prompt via -p
   const idx = a.indexOf("pi");
@@ -528,12 +546,12 @@ test("piped stdin is implicitly ephemeral and forwards prompt", () => {
   assert.match(a[idx + 2], /piped/);
 });
 
-test("interactive (PTY, no -p, no --ephemeral) creates .harness/<agent>/ persistence dir", () => {
+test("interactive (PTY, no -p, no --ephemeral) creates XDG state persistence dir for agent", () => {
   // Inverse of the two implicit-ephemeral cases above: when the user is
   // truly interactive (TTY, no -p, no piped stdin) and does NOT pass
   // --ephemeral, the run() path must materialize the persistence dirs the
   // adapter advertises via persistMounts(). For the pi adapter that is
-  // `<cwd>/.harness/pi/` (empty hostSubpath -> persistRoot itself).
+  // the agent subdirectory under $XDG_STATE_HOME/harness/<normalized-cwd>/.
   //
   // This locks the boundary so a future refactor can't accidentally drop
   // the fs.mkdirSync() call or invert the `effectiveEphemeral` flag.
@@ -548,20 +566,23 @@ test("interactive (PTY, no -p, no --ephemeral) creates .harness/<agent>/ persist
     return;
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
     cwd: localWork,
-    env: {
-      ...process.env,
-      PATH: `${SHIM_DIR}:${process.env.PATH}`,
-      HARNESS_IMAGE_TAG: "test-tag",
-    },
+    env,
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(
-    fs.existsSync(path.join(localWork, ".harness", "pi")),
+    fs.existsSync(persistDir(localWork, "pi", env)),
     true,
-    ".harness/pi/ should be created in interactive mode without --ephemeral",
+    "XDG state dir for pi should be created in interactive mode without --ephemeral",
   );
   // And the docker args must include a -v mount targeting /home/harness/.pi/agent.
   const cleaned = r.stdout.replace(/\r/g, "");
@@ -575,10 +596,10 @@ test("interactive (PTY, no -p, no --ephemeral) creates .harness/<agent>/ persist
   );
 });
 
-test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount", () => {
+test("--ephemeral overrides interactive PTY: no XDG state dir, no persist mount", () => {
   // Inverse of the interactive-PTY persistence test: when the user is in a
   // real PTY (TTY, no -p, no piped stdin) but EXPLICITLY passes --ephemeral,
-  // the run() path must NOT create .harness/<agent>/ and must NOT include
+  // the run() path must NOT create the XDG state dir and must NOT include
   // the adapter's persistMounts() in the docker args.
   //
   // This locks the precedence of the --ephemeral flag in
@@ -592,24 +613,27 @@ test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount"
     return; // platforms without `script` (rare; ubuntu-latest has it).
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync(
     "script",
     ["-qfec", `node ${CLI} --ephemeral`, "/dev/null"],
     {
       cwd: localWork,
-      env: {
-        ...process.env,
-        PATH: `${SHIM_DIR}:${process.env.PATH}`,
-        HARNESS_IMAGE_TAG: "test-tag",
-      },
+      env,
       encoding: "utf8",
     },
   );
   assert.equal(r.status, 0, r.stderr);
   assert.equal(
-    fs.existsSync(path.join(localWork, ".harness")),
+    fs.existsSync(persistDir(localWork, "pi", env)),
     false,
-    ".harness/ must NOT be created when --ephemeral is passed in interactive mode",
+    "XDG state dir must NOT be created when --ephemeral is passed in interactive mode",
   );
   const cleaned = r.stdout.replace(/\r/g, "");
   const a = dockerArgs(cleaned);
@@ -631,27 +655,30 @@ test("piped whitespace-only stdin takes no-prompt branch (pi has no -p)", () => 
   //
   // Behaviour to lock:
   //   - exit code 0
-  //   - implicitly ephemeral (piped, !isTTY) so NO .harness/ dir
+  //   - implicitly ephemeral (piped, !isTTY) so NO XDG state dir
   //   - pi adapter's docker cmd has NO `-p` arg (interactive pi, just `pi`)
   //
   // This guards against a regression where `input` (raw, untrimmed) gets
   // passed through and the adapter receives `-p "   \n"` instead.
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync("node", [CLI], {
     cwd: localWork,
-    env: {
-      ...process.env,
-      PATH: `${SHIM_DIR}:${process.env.PATH}`,
-      HARNESS_IMAGE_TAG: "test-tag",
-    },
+    env,
     input: "   \n\t  \n",
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(
-    fs.existsSync(path.join(localWork, ".harness")),
+    fs.existsSync(persistDir(localWork, "pi", env)),
     false,
-    "piped stdin is implicitly ephemeral; .harness/ must NOT be created",
+    "piped stdin is implicitly ephemeral; XDG state dir must NOT be created",
   );
   const a = dockerArgs(r.stdout);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${r.stdout}`);
@@ -682,16 +709,19 @@ test("opencode interactive (no --ephemeral) creates all three persistence dirs a
     return; // skip on platforms without `script`.
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync(
     "script",
     ["-qfec", `node ${CLI} -a opencode`, "/dev/null"],
     {
       cwd: localWork,
-      env: {
-        ...process.env,
-        PATH: `${SHIM_DIR}:${process.env.PATH}`,
-        HARNESS_IMAGE_TAG: "test-tag",
-      },
+      env,
       encoding: "utf8",
     },
   );
@@ -700,9 +730,9 @@ test("opencode interactive (no --ephemeral) creates all three persistence dirs a
   // All three host-side persistence buckets must be created.
   for (const sub of ["config", "share", "state"]) {
     assert.equal(
-      fs.existsSync(path.join(localWork, ".harness", "opencode", sub)),
+      fs.existsSync(path.join(persistDir(localWork, "opencode", env), sub)),
       true,
-      `.harness/opencode/${sub}/ should be created in interactive mode`,
+      `XDG state dir opencode/${sub}/ should be created in interactive mode`,
     );
   }
 
@@ -996,7 +1026,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
 
 test("--volumes is forwarded alongside interactive persistence mounts", () => {
   // In interactive (PTY, no -p, no --ephemeral) mode the CLI creates the
-  // .harness/<agent>/ persistence directory and adds its mount(s) to docker
+  // XDG state dir for the agent and adds its mount(s) to docker
   // args. Lock down here that user-supplied --volumes are appended AFTER the
   // persist mounts and BOTH land in the final docker invocation so a future
   // refactor cannot accidentally drop one path when the other is in play.
@@ -1007,20 +1037,23 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
     return; // skip on platforms without `script`.
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
   const extraDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "harness-vol-persist-"),
   );
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   try {
     const r = spawnSync(
       "script",
       ["-qfec", `node ${CLI} --volumes ${extraDir}:/mnt/data`, "/dev/null"],
       {
         cwd: localWork,
-        env: {
-          ...process.env,
-          PATH: `${SHIM_DIR}:${process.env.PATH}`,
-          HARNESS_IMAGE_TAG: "test-tag",
-        },
+        env,
         encoding: "utf8",
       },
     );
@@ -1028,9 +1061,9 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
 
     // interactive non-ephemeral path created the persist dir
     assert.equal(
-      fs.existsSync(path.join(localWork, ".harness", "pi")),
+      fs.existsSync(persistDir(localWork, "pi", env)),
       true,
-      ".harness/pi/ should be created in interactive mode",
+      "XDG state dir for pi should be created in interactive mode",
     );
 
     const cleaned = r.stdout.replace(/\r/g, "");
@@ -1439,7 +1472,7 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
   //
   // The pi adapter test only locks a single empty-hostSubpath mount and
   // PR #30 (mine, merged) locks the opencode 3-mount shape. This is the
-  // analog test for hermes\'s 2-mount shape so a future refactor cannot
+  // analog test for hermes's 2-mount shape so a future refactor cannot
   // silently drop one of the two hermes persistence buckets.
   const which = spawnSync("sh", ["-c", "command -v script"], {
     encoding: "utf8",
@@ -1448,16 +1481,19 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
     return; // skip on platforms without `script`.
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const xdgDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-xdg-"));
+  const env = {
+    ...process.env,
+    PATH: `${SHIM_DIR}:${process.env.PATH}`,
+    HARNESS_IMAGE_TAG: "test-tag",
+    XDG_STATE_HOME: xdgDir,
+  };
   const r = spawnSync(
     "script",
     ["-qfec", `node ${CLI} -a hermes`, "/dev/null"],
     {
       cwd: localWork,
-      env: {
-        ...process.env,
-        PATH: `${SHIM_DIR}:${process.env.PATH}`,
-        HARNESS_IMAGE_TAG: "test-tag",
-      },
+      env,
       encoding: "utf8",
     },
   );
@@ -1466,9 +1502,9 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
   // Both host-side persistence buckets must be created.
   for (const sub of ["local", "openrouter"]) {
     assert.equal(
-      fs.existsSync(path.join(localWork, ".harness", "hermes", sub)),
+      fs.existsSync(path.join(persistDir(localWork, "hermes", env), sub)),
       true,
-      `.harness/hermes/${sub}/ should be created in interactive mode`,
+      `XDG state dir hermes/${sub}/ should be created in interactive mode`,
     );
   }
 
