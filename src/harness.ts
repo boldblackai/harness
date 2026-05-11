@@ -128,13 +128,18 @@ interface CacheFile {
 const CACHE_VERSION = 1;
 
 function xdgStateDir(): string {
-  return process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
+  return (
+    process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state")
+  );
 }
 
 function persistBaseDir(workspacePath: string): string {
   // Normalize the workspace path into a safe directory name:
   //   /home/user/projects/myapp → home-user-projects-myapp
-  const normalized = workspacePath.replace(/\/+$/, "").replace(/^\//, "").replace(/\//g, "-");
+  const normalized = workspacePath
+    .replace(/\/+$/, "")
+    .replace(/^\//, "")
+    .replace(/\//g, "-");
   return path.join(xdgStateDir(), "harness", normalized);
 }
 
