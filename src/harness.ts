@@ -139,7 +139,7 @@ function persistBaseDir(workspacePath: string): string {
   //   /tmp/harness-work → tmp-harness-work
   const home = os.homedir();
   let stripped = workspacePath;
-  if (stripped.startsWith(home + "/")) {
+  if (stripped.startsWith(`${home}/`)) {
     stripped = stripped.slice(home.length + 1);
   } else {
     stripped = stripped.replace(/^\/+/, "");
