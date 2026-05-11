@@ -130,6 +130,21 @@ test("--help documents HARNESS_IMAGE_TAG environment variable", () => {
   assert.match(r.stdout, /HARNESS_IMAGE_TAG[\s\S]*[Dd]ocker image tag/);
 });
 
+test("unrecognized flags emit a warning on stderr", () => {
+  const r = runCli(["--bogus-flag", "--another-fake", "-p", "noop"]);
+  assert.equal(r.status, 0);
+  assert.match(
+    r.stderr,
+    /warning: unrecognized flag\(s\): --bogus-flag, --another-fake/,
+  );
+});
+
+test("recognized flags do not emit a warning", () => {
+  const r = runCli(["--no-verify", "-p", "noop"]);
+  assert.equal(r.status, 0);
+  assert.doesNotMatch(r.stderr, /unrecognized flag/);
+});
+
 test("unknown agent fails fast with helpful error", () => {
   const r = runCli(["-a", "bogus-agent", "-p", "noop"]);
   assert.notEqual(r.status, 0);

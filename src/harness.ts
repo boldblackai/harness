@@ -341,7 +341,7 @@ function getImage(agent: string): string {
   return `${REGISTRY}:${tag}`;
 }
 
-const argv = minimist<Args>(process.argv.slice(2), {
+const MINIMIST_OPTS = {
   boolean: ["help", "h", "ephemeral"],
   string: [
     "env-file",
@@ -365,7 +365,28 @@ const argv = minimist<Args>(process.argv.slice(2), {
     a: "agent",
     v: "volumes",
   },
-});
+};
+
+const argv = minimist<Args>(process.argv.slice(2), MINIMIST_OPTS);
+
+// Warn on unrecognized flags
+{
+  const knownKeys = new Set([
+    "_", // minimist internal positional args
+    ...MINIMIST_OPTS.boolean,
+    ...MINIMIST_OPTS.string,
+    ...Object.keys(MINIMIST_OPTS.alias),
+    ...Object.values(MINIMIST_OPTS.alias),
+    "verify", // --no-verify sets verify=false
+    "skills", // --no-skills sets skills=false
+  ]);
+  const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `warning: unrecognized flag(s): ${unknown.map((k) => `--${k}`).join(", ")}\n`,
+    );
+  }
+}
 
 if (argv.help) {
   process.stdout.write(USAGE);
