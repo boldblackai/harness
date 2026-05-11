@@ -12,6 +12,7 @@ RUN apt-get update && \
         ca-certificates \
         curl \
         fd-find \
+        git \
         gnupg \
         jq \
         ripgrep \

@@ -37,7 +37,7 @@ The project uses a **multi-image architecture** with a shared base and agent-spe
 
 | Image | Dockerfile | Tag pattern | Contents |
 |-------|-----------|-------------|----------|
-| Base (pi) | `Dockerfile` | `<version>` | Debian stable-slim, Node.js v24, pnpm, `pi-coding-agent`, `gh`, `mise`, `tini`, `fd`, `ripgrep`, `jq` |
+| Base (pi) | `Dockerfile` | `<version>` | Debian stable-slim, Node.js v24, pnpm, `git`, `pi-coding-agent`, `gh`, `mise`, `tini`, `fd`, `ripgrep`, `jq` |
 | OpenCode | `Dockerfile.opencode` | `opencode-<version>` | Base + `opencode-ai` |
 | Hermes | `Dockerfile.hermes` | `hermes-<version>` | Base + `uv`, `cosign`, `tirith`, Python venv with `hermes-agent` (incl. MCP SDK), `python-telegram-bot`, `croniter`, `faster-whisper` |
 
