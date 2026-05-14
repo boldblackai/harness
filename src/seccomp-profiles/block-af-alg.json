@@ -1,0 +1,10 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": ["socket"],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [{ "index": 0, "op": "SCMP_CMP_EQ", "value": 38 }]
+    }
+  ]
+}

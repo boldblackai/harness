@@ -6,34 +6,18 @@ import os from "node:os";
 import path from "node:path";
 import minimist, { type ParsedArgs } from "minimist";
 
-/**
- * Minimal seccomp profile that blocks socket(AF_ALG, ...) to prevent
- * container processes from accessing the kernel's AF_ALG cryptographic
- * API — a known container escape / privilege escalation vector.
- *
- * Default action is ALLOW; only the specific socket(domain=AF_ALG)
- * call is rejected with ENOSYS.
- */
-const SECCOMP_BLOCK_AF_ALG = {
-  defaultAction: "SCMP_ACT_ALLOW",
-  syscalls: [
-    {
-      names: ["socket"],
-      action: "SCMP_ACT_ERRNO",
-      args: [{ index: 0, op: "SCMP_CMP_EQ", value: 38 }], // AF_ALG = 38
-    },
-  ],
-} as const;
+const SECCOMP_PROFILE_SRC = path.join(
+  __dirname,
+  "seccomp-profiles",
+  "block-af-alg.json",
+);
 
 function writeSeccompProfile(): string {
   const dir = path.join(os.tmpdir(), "harness-seccomp");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = path.join(dir, "block-af-alg.json");
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, JSON.stringify(SECCOMP_BLOCK_AF_ALG), {
-      mode: 0o600,
-    });
-  }
+  fs.copyFileSync(SECCOMP_PROFILE_SRC, file);
+  fs.chmodSync(file, 0o600);
   return file;
 }
 
