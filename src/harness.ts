@@ -6,20 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import minimist, { type ParsedArgs } from "minimist";
 
-const SECCOMP_PROFILE_SRC = path.join(
+const SECCOMP_PROFILE = path.join(
   __dirname,
   "seccomp-profiles",
   "block-af-alg.json",
 );
-
-function writeSeccompProfile(): string {
-  const dir = path.join(os.tmpdir(), "harness-seccomp");
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, "block-af-alg.json");
-  fs.copyFileSync(SECCOMP_PROFILE_SRC, file);
-  fs.chmodSync(file, 0o600);
-  return file;
-}
 
 interface Args extends ParsedArgs {
   help: boolean;
@@ -531,8 +522,6 @@ async function run(prompt: string | null): Promise<void> {
     );
   }
 
-  const seccompProfile = writeSeccompProfile();
-
   const args = [
     "run",
     "--rm",
@@ -542,7 +531,7 @@ async function run(prompt: string | null): Promise<void> {
     "--security-opt",
     "no-new-privileges:true",
     "--security-opt",
-    `seccomp=${seccompProfile}`,
+    `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
     ...adapterDockerArgs,
     ...volumeArgs,
