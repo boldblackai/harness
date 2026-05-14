@@ -6,6 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import minimist, { type ParsedArgs } from "minimist";
 
+const SECCOMP_PROFILE = path.join(
+  __dirname,
+  "seccomp-profiles",
+  "block-af-alg.json",
+);
+
 interface Args extends ParsedArgs {
   help: boolean;
   h: boolean;
@@ -524,6 +530,8 @@ async function run(prompt: string | null): Promise<void> {
     "--cap-add=NET_RAW",
     "--security-opt",
     "no-new-privileges:true",
+    "--security-opt",
+    `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
     ...adapterDockerArgs,
     ...volumeArgs,

@@ -16,7 +16,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/seccomp-profiles bin/seccomp-profiles",
     "prepare": "tsc",
     "lint": "pnpm lint:ts && pnpm lint:md && pnpm lint:sh && pnpm lint:docker && pnpm lint:actions",
     "lint:ts": "biome check .",

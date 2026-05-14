@@ -176,6 +176,7 @@ Each run starts the container with:
 
 - `--cap-drop=ALL --cap-add=NET_RAW` — minimal capability set
 - `--security-opt no-new-privileges:true` — block privilege escalation
+- `--security-opt seccomp=...` — inline seccomp profile blocks `socket(AF_ALG)` to prevent kernel crypto API access (a known container escape vector)
 - Only your mounted directory (or single file with `-f`) is visible to the agent
 
 ### Image verification
