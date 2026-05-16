@@ -1,4 +1,4 @@
-FROM debian:stable-slim@sha256:8f0c555de6a2f9c2bda1b170b67479d11f7f5e3b66bb4a7a1d8843361c9dd3ff
+FROM debian:stable-slim
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -52,7 +52,7 @@ ENV PNPM_MINIMUM_RELEASE_AGE=10080
 ENV PATH=$PNPM_HOME:$PATH
 
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate && \
-    pnpm install -g @mariozechner/pi-coding-agent@0.71.1 && \
+    pnpm install -g @mariozechner/pi-coding-agent@0.73.1 && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm && \
     mkdir -p /etc/harness/pi-defaults && \
