@@ -51,8 +51,8 @@ ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PNPM_MINIMUM_RELEASE_AGE=10080
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN corepack enable && corepack prepare pnpm@10.33.2 --activate && \
-    pnpm install -g @mariozechner/pi-coding-agent@0.71.1 && \
+RUN corepack enable && corepack prepare pnpm@11.2.2 --activate && \
+    pnpm install -g @mariozechner/pi-coding-agent@0.73.1 && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm && \
     mkdir -p /etc/harness/pi-defaults && \
