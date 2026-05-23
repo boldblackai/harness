@@ -4,3 +4,4 @@ bin/harness.d.ts
 bin/harness.js.map
 .harness
 coverage/
+tmp/
