@@ -244,6 +244,8 @@ aws ecs create-service --region "$AWS_REGION" \
 
 `--enable-execute-command` is the toggle that makes `aws ecs execute-command` work below — it cannot be enabled retroactively on a running service without an update + new deployment.
 
+> **First-task timing.** Initial task placement typically takes 2–3 minutes — most of that is the ~500 MB image pull from `ghcr.io`. If you see a transient `CannotPullContainerError` in the service events (`describe-services --query 'services[0].events'`), don't panic: ECS automatically stops the failed task and starts a fresh one. Persistent failures usually mean a real problem (subnet/SG/IAM/image-not-found).
+
 ### Fargate monitoring
 
 ```bash
@@ -260,6 +262,8 @@ aws ecs execute-command --region "$AWS_REGION" \
   --cluster "${CLAW_NAME}" --task "$TASK_ARN" \
   --container hermes --interactive --command "/bin/bash"
 ```
+
+> **Exec sessions run as root.** `aws ecs execute-command` opens a **root** shell inside the container by default, even though the workload (PID 1) runs as the `harness` user (uid 1000). If you need to verify or debug behavior as the harness user (e.g. confirming a mount is writable from the workload's perspective, not just root's), prefix the command with `runuser -u harness --`. To verify the workload's actual user from outside, use `stat -c %u /proc/1` — checking `id -u` inside the exec session will report root.
 
 ### Fargate customization (no derived image)
 
