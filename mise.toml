@@ -1,4 +1,5 @@
 [tools]
+jj = "0.41.0"
 "github:koalaman/shellcheck" = "v0.11.0"
 "github:hadolint/hadolint" = "v2.14.0"
 "github:rhysd/actionlint" = "v1.7.7"
