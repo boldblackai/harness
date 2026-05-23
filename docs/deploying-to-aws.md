@@ -97,9 +97,16 @@ Create a mount target in each subnet your task can run in, and a security group 
 ```bash
 VPC_ID=$(aws ec2 describe-vpcs --region "$AWS_REGION" \
   --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
+# Pick a subnet in an AZ that supports ARM64 Fargate. In us-east-1 specifically,
+# us-east-1e and us-east-1f do NOT support ARM64 Fargate — picking Subnets[0]
+# blindly will fail intermittently with "The required capabilities cannot be
+# supported on requested platform". The filter below restricts to AZs a/b/c/d.
+# If you set `cpuArchitecture: X86_64` in the task definition, this caveat
+# doesn't apply and you can drop the filter.
 SUBNET_ID=$(aws ec2 describe-subnets --region "$AWS_REGION" \
   --filters Name=vpc-id,Values="$VPC_ID" Name=default-for-az,Values=true \
-  --query 'Subnets[0].SubnetId' --output text)
+  --query "Subnets[?ends_with(AvailabilityZone, \`a\`) || ends_with(AvailabilityZone, \`b\`) || ends_with(AvailabilityZone, \`c\`) || ends_with(AvailabilityZone, \`d\`)] | [0].SubnetId" \
+  --output text)
 
 SG_ID=$(aws ec2 create-security-group --region "$AWS_REGION" \
   --group-name "${CLAW_NAME}-sg" --description "${CLAW_NAME}" --vpc-id "$VPC_ID" \
@@ -211,7 +218,7 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
 }
 ```
 
-> The image is published for both `linux/amd64` and `linux/arm64`. ARM64 Fargate is ~20% cheaper — leave `cpuArchitecture` as `ARM64` unless you have a reason not to.
+> The image is published for both `linux/amd64` and `linux/arm64`. ARM64 Fargate is ~20% cheaper — leave `cpuArchitecture` as `ARM64` unless you have a reason not to. (In `us-east-1`, only AZs `a`/`b`/`c`/`d` support ARM64 Fargate; the subnet picker above filters accordingly.)
 
 Register it:
 
@@ -344,7 +351,12 @@ dnf -y update
 dnf -y install docker
 systemctl enable --now docker
 
+# IMPORTANT: chown to 1000:1000 so the in-container harness user (uid 1000)
+# can write to the bind-mount. Without this, entrypoint-hermes.sh's `cp -rn`
+# first-boot seed fails with "Permission denied" and the systemd unit
+# crash-loops.
 mkdir -p /var/lib/hermes-claw
+chown 1000:1000 /var/lib/hermes-claw
 
 # Pull secrets into an env file (root-readable only)
 umask 077
