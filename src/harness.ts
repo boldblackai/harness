@@ -531,10 +531,7 @@ async function run(prompt: string | null): Promise<void> {
       // Per-agent mise persistence
       const miseHostPath = path.join(persistRoot, "mise");
       fs.mkdirSync(miseHostPath, { recursive: true });
-      volumeArgs.push(
-        "-v",
-        `${miseHostPath}:/home/harness/.local/share/mise`,
-      );
+      volumeArgs.push("-v", `${miseHostPath}:/home/harness/.local/share/mise`);
     }
   }
 
