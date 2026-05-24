@@ -97,7 +97,12 @@ RUN set -eux && \
     echo "${EXPECTED}  /tini" | sha256sum --check --strict && \
     chmod +x /tini
 
-RUN mkdir -p /home/harness/.local && chown harness:harness /home/harness/.local
+RUN mkdir -p /home/harness/.local /home/harness/.npm-global && \
+    chown harness:harness /home/harness/.local /home/harness/.npm-global
+
+# Let npm install -g work for the harness user (avoid root-owned /usr/lib/node_modules)
+ENV NPM_CONFIG_PREFIX=/home/harness/.npm-global
+ENV PATH=/home/harness/.npm-global/bin:$PATH
 
 USER harness
 WORKDIR /app
