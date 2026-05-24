@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.7.0] - 2026-05-16
+
+### Summary
+Adds warning when unrecognized CLI flags are passed, blocks AF_ALG socket creation via seccomp profile for security, adds git to the base image for mise compatibility, bumps hermes-agent to v2026.5.7 (Tenacity Release with multi-agent kanban, `/goal` lock, and security fixes), expands test coverage with code coverage metrics, and consolidates v1.6.x test coverage.
+
+### Dependency Updates
+- updated `hermes-agent` from v2026.4.30 to v2026.5.7
+
+### Upstream Release Notes
+
+#### hermes-agent v2026.4.30 → v2026.5.7
+
+**v2026.5.7** — Major v0.13.0 "Tenacity" release: multi-agent Kanban with durable board, heartbeats, reclaim, zombie detection, and hallucination gate; `/goal` lock keeps the agent on-task across turns; security wave closes 8 P0s (redaction ON by default, Discord role-allowlists guild-scoped, WhatsApp rejects strangers by default, TOCTOU fixes across auth.json and MCP OAuth); Google Chat as 20th messaging platform; gateway auto-resumes interrupted sessions after restart; checkmarks v2 rewrite for real pruning; providers become a pluggable surface; i18n support for 7 locales.
+
+### Changes
+- a76c6e2 security: block AF_ALG socket creation via seccomp profile (#60)
+- 6b9a0d2 feat: warn on unrecognized CLI flags (#66)
+- 22a4d5b fix: add git to base image for mise compatibility (#67)
+- 041b706 deps: bump hermes-agent v2026.4.30 → v2026.5.7 (#59)
+- 191d601 ci: add code coverage metrics to test suite (#56)
+- 434d2d4 test: v1.7.x coverage bump (8 distinct CLI invariants) (#58)
+- 8b30d3b test: consolidated v1.6.x coverage (tracks N-T, replaces #49-#55) (#57)
+- e773746 Change CODEOWNERS to assign ownership to @capotej
+- 97a7156 test(volumes): --volumes is forwarded alongside interactive persistence mounts (#48)
+- a27b6f1 test(volumes): --volumes is forwarded alongside --file mode (both mounts present) (#47)
+
 ## [1.6.4] - 2026-05-04
 
 ### Summary

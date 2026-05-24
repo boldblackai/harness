@@ -100,6 +100,7 @@ The e2e workflow enforces 80% line/branch/function coverage thresholds via Node.
 ## Rules
 
 - Keep `README.md` and `AGENTS.md` updated when changing CLI flags, options, architecture, Dockerfiles, CI workflows, or any behavior. If you change how something works, update both files to reflect it.
+- All fenced code blocks in markdown files MUST specify a language (e.g. `bash`, `typescript`, `text`). This is enforced by markdownlint rule MD040.
 - All dependencies in Dockerfiles MUST be pinned: base images by digest, multi-stage source images by version tag, npm/pnpm packages by exact version, git-cloned agents by tag or commit SHA.
 - All downloaded binaries in Dockerfiles MUST include checksum verification (sha256sum).
 - When adding a new agent adapter: add the class, register it in `ADAPTERS`, create a `Dockerfile.<name>`, `entrypoint-<name>.sh`, and update `Makefile` with `image-<name>` target.
