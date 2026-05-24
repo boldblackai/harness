@@ -204,7 +204,7 @@ The cooldown applies to transitive dependencies too. Older packages install norm
 
 ## Persistence
 
-Interactive runs (no `-p` and no piped stdin) store persistence data at `$XDG_DATA_HOME/harness/<project>/<agent>/` (defaults to `~/.local/share/harness/`). The `<project>` segment is the working directory path with `/` replaced by `_` and the home prefix stripped. This lets agents resume sessions, skip database migrations on repeat runs, and retain memories across invocations. Per-agent `mise` tool data is also persisted at `<persist-root>/mise/`.
+Interactive runs (no `-p` and no piped stdin) store persistence data at `$XDG_DATA_HOME/harness/<project>/<agent>/` (defaults to `~/.local/share/harness/`). The `<project>` segment is the working directory path with `/` replaced by `_` and the home prefix stripped. This lets agents resume sessions, skip database migrations on repeat runs, and retain memories across invocations. Per-agent `mise` tool data and trust settings are persisted at `<persist-root>/mise/` and `<persist-root>/mise-state/` respectively.
 
 One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence data is created. Use `--ephemeral` to force-disable persistence on interactive runs.
 

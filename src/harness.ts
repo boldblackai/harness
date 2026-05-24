@@ -519,7 +519,7 @@ async function run(prompt: string | null): Promise<void> {
       const oldHarnessDir = path.join(workspace, ".harness");
       if (fs.existsSync(oldHarnessDir)) {
         console.error(
-          `harness: WARNING: found ${oldHarnessDir}/ — persistence data now lives at ${path.join(xdgDataDir(), "harness", normalizeCwd(workspace), agentName)}. To migrate session data, copy the contents of .harness/<agent>/ to the new location. Otherwise this directory can be safely deleted.`,
+          `harness: WARNING: found ${oldHarnessDir}/ — persistence data now lives at ${persistRoot}. To migrate session data, copy the contents of .harness/${agentName}/ to the new location. Otherwise this directory can be safely deleted.`,
         );
       }
       const mounts = adapter.persistMounts?.() ?? [];
@@ -528,10 +528,13 @@ async function run(prompt: string | null): Promise<void> {
         fs.mkdirSync(hostFullPath, { recursive: true });
         volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
       }
-      // Per-agent mise persistence
-      const miseHostPath = path.join(persistRoot, "mise");
-      fs.mkdirSync(miseHostPath, { recursive: true });
-      volumeArgs.push("-v", `${miseHostPath}:/home/harness/.local/share/mise`);
+      // Per-agent mise persistence (data: tools/plugins, state: trust settings)
+      const miseDataPath = path.join(persistRoot, "mise");
+      fs.mkdirSync(miseDataPath, { recursive: true });
+      volumeArgs.push("-v", `${miseDataPath}:/home/harness/.local/share/mise`);
+      const miseStatePath = path.join(persistRoot, "mise-state");
+      fs.mkdirSync(miseStatePath, { recursive: true });
+      volumeArgs.push("-v", `${miseStatePath}:/home/harness/.local/state/mise`);
     }
   }
 

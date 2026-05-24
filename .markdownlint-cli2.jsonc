@@ -8,5 +8,5 @@
     // README/AGENTS don't start with a heading (logo image / redirect)
     "MD041": false
   },
-  "ignores": ["node_modules/", "CHANGELOG.md", ".claude/"]
+  "ignores": ["node_modules/", "CHANGELOG.md", ".claude/", ".harness/"]
 }

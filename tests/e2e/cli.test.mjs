@@ -2071,7 +2071,7 @@ test("interactive mode creates mise dir and mounts it at /home/harness/.local/sh
       encoding: "utf8",
     });
     assert.equal(r.status, 0, r.stderr);
-    // Verify mise dir on host
+    // Verify mise data dir on host
     const nCwd = normalizeCwd(workDir, tmp);
     const miseDir = path.join(xdgData, "harness", nCwd, "pi", "mise");
     assert.equal(
@@ -2079,13 +2079,30 @@ test("interactive mode creates mise dir and mounts it at /home/harness/.local/sh
       true,
       `mise dir should exist at ${miseDir}`,
     );
-    // Verify docker mount
+    // Verify mise state dir on host
+    const miseStateDir = path.join(
+      xdgData,
+      "harness",
+      nCwd,
+      "pi",
+      "mise-state",
+    );
+    assert.equal(
+      fs.existsSync(miseStateDir),
+      true,
+      `mise-state dir should exist at ${miseStateDir}`,
+    );
+    // Verify docker mounts
     const cleaned = r.stdout.replace(/\r/g, "");
     const a = dockerArgs(cleaned);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
-      `expected mise volume mount in: ${a.join(" ")}`,
+      `expected mise data volume mount in: ${a.join(" ")}`,
+    );
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/state/mise")),
+      `expected mise state volume mount in: ${a.join(" ")}`,
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -2121,7 +2138,12 @@ test("ephemeral mode (-p) does NOT create mise dir or mount", () => {
     assert.equal(
       a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
       false,
-      "ephemeral mode must not mount mise",
+      "ephemeral mode must not mount mise data",
+    );
+    assert.equal(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/state/mise")),
+      false,
+      "ephemeral mode must not mount mise state",
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

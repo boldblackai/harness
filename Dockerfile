@@ -97,6 +97,8 @@ RUN set -eux && \
     echo "${EXPECTED}  /tini" | sha256sum --check --strict && \
     chmod +x /tini
 
+RUN mkdir -p /home/harness/.local && chown harness:harness /home/harness/.local
+
 USER harness
 WORKDIR /app
 ENTRYPOINT ["/tini", "--", "/entrypoint.sh"]
