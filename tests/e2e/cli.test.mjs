@@ -2087,10 +2087,6 @@ test("interactive mode creates mise dir and mounts it at /home/harness/.local/sh
       a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
       `expected mise volume mount in: ${a.join(" ")}`,
     );
-    assert.ok(
-      a.some((arg) => arg === "MISE_DATA_DIR=/home/harness/.local/share/mise"),
-      `expected MISE_DATA_DIR env in: ${a.join(" ")}`,
-    );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -2126,11 +2122,6 @@ test("ephemeral mode (-p) does NOT create mise dir or mount", () => {
       a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
       false,
       "ephemeral mode must not mount mise",
-    );
-    assert.equal(
-      a.some((arg) => arg.includes("MISE_DATA_DIR")),
-      false,
-      "ephemeral mode must not set MISE_DATA_DIR",
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

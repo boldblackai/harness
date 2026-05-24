@@ -501,13 +501,13 @@ async function run(prompt: string | null): Promise<void> {
   const interactive = process.stdin.isTTY;
   const ttyFlags = interactive ? ["-it"] : ["-i"];
 
-  let dockerExtraArgs: string[];
+  let volumeArgs: string[];
   if (fileArg) {
     const absFile = path.resolve(fileArg);
     const fileName = path.basename(absFile);
-    dockerExtraArgs = ["-v", `${absFile}:/workspace/${fileName}`];
+    volumeArgs = ["-v", `${absFile}:/workspace/${fileName}`];
   } else {
-    dockerExtraArgs = ["-v", `${workspace}:/workspace`];
+    volumeArgs = ["-v", `${workspace}:/workspace`];
     if (!effectiveEphemeral) {
       const persistRoot = path.join(
         xdgDataDir(),
@@ -519,25 +519,21 @@ async function run(prompt: string | null): Promise<void> {
       const oldHarnessDir = path.join(workspace, ".harness");
       if (fs.existsSync(oldHarnessDir)) {
         console.error(
-          `harness: WARNING: found ${oldHarnessDir}/ — persistence data now lives at ${path.join(xdgDataDir(), "harness", normalizeCwd(workspace), "<agent>")}. To migrate session data, copy the contents of .harness/<agent>/ to the new location. Otherwise this directory can be safely deleted.`,
+          `harness: WARNING: found ${oldHarnessDir}/ — persistence data now lives at ${path.join(xdgDataDir(), "harness", normalizeCwd(workspace), agentName)}. To migrate session data, copy the contents of .harness/<agent>/ to the new location. Otherwise this directory can be safely deleted.`,
         );
       }
       const mounts = adapter.persistMounts?.() ?? [];
       for (const mount of mounts) {
         const hostFullPath = path.join(persistRoot, mount.hostSubpath);
         fs.mkdirSync(hostFullPath, { recursive: true });
-        dockerExtraArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
+        volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
       }
       // Per-agent mise persistence
       const miseHostPath = path.join(persistRoot, "mise");
       fs.mkdirSync(miseHostPath, { recursive: true });
-      dockerExtraArgs.push(
+      volumeArgs.push(
         "-v",
         `${miseHostPath}:/home/harness/.local/share/mise`,
-      );
-      dockerExtraArgs.push(
-        "-e",
-        "MISE_DATA_DIR=/home/harness/.local/share/mise",
       );
     }
   }
@@ -555,7 +551,7 @@ async function run(prompt: string | null): Promise<void> {
     ];
     for (const sd of skillDirs) {
       if (fs.existsSync(sd.host) && fs.statSync(sd.host).isDirectory()) {
-        dockerExtraArgs.push("-v", `${sd.host}:${sd.container}`);
+        volumeArgs.push("-v", `${sd.host}:${sd.container}`);
       }
     }
   }
@@ -580,7 +576,7 @@ async function run(prompt: string | null): Promise<void> {
     `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
     ...adapterDockerArgs,
-    ...dockerExtraArgs,
+    ...volumeArgs,
     ...userVolumeArgs,
     "-w",
     "/workspace",
