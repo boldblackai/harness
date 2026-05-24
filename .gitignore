@@ -1,6 +1,4 @@
 node_modules/
-bin/harness.js
-bin/harness.d.ts
-bin/harness.js.map
+bin/
 .harness
 coverage/
