@@ -332,6 +332,10 @@ Options:
 
 Environment variables:
   HARNESS_IMAGE_TAG      Override the Docker image tag (defaults to package version)
+  XDG_DATA_HOME         Override the base directory for persistence data (defaults to ~/.local/share)
+  XDG_CACHE_HOME        Override the base directory for cosign cache (defaults to ~/.cache)
+
+Persistence data is stored at $XDG_DATA_HOME/harness/<project>/<agent>/.
 
 You can also pipe text to harness as an implied -p:
   echo "write me a fizzbuzz in Go" | harness
@@ -341,6 +345,23 @@ const workspace = process.cwd();
 const REGISTRY = "ghcr.io/capotej/harness";
 const VERSION: string = require("../package.json").version;
 const IMAGE_TAG = process.env.HARNESS_IMAGE_TAG ?? VERSION;
+
+function normalizeCwd(cwd: string): string {
+  const home = os.homedir();
+  let normalized = cwd;
+  if (normalized.startsWith(home)) {
+    normalized = normalized.slice(home.length);
+  }
+  normalized = normalized.replace(/\//g, "_");
+  if (normalized === "") {
+    normalized = "_home";
+  }
+  return normalized;
+}
+
+function xdgDataDir(): string {
+  return process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+}
 
 function getImage(agent: string): string {
   const tag = agent === "pi" ? IMAGE_TAG : `${agent}-${IMAGE_TAG}`;
@@ -486,13 +507,30 @@ async function run(prompt: string | null): Promise<void> {
   } else {
     volumeArgs = ["-v", `${workspace}:/workspace`];
     if (!effectiveEphemeral) {
-      const persistRoot = path.join(workspace, ".harness", agentName);
+      const persistRoot = path.join(
+        xdgDataDir(),
+        "harness",
+        normalizeCwd(workspace),
+        agentName,
+      );
+      // Deprecation warning for old .harness/ directory
+      const oldHarnessDir = path.join(workspace, ".harness");
+      if (fs.existsSync(oldHarnessDir)) {
+        console.error(
+          `harness: WARNING: found ${oldHarnessDir}/ — persistence data now lives at ${path.join(xdgDataDir(), "harness", normalizeCwd(workspace), "<agent>")}. To migrate session data, copy the contents of .harness/<agent>/ to the new location. Otherwise this directory can be safely deleted.`,
+        );
+      }
       const mounts = adapter.persistMounts?.() ?? [];
       for (const mount of mounts) {
         const hostFullPath = path.join(persistRoot, mount.hostSubpath);
         fs.mkdirSync(hostFullPath, { recursive: true });
         volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
       }
+      // Per-agent mise persistence
+      const miseHostPath = path.join(persistRoot, "mise");
+      fs.mkdirSync(miseHostPath, { recursive: true });
+      volumeArgs.push("-v", `${miseHostPath}:/home/harness/.local/share/mise`);
+      volumeArgs.push("-e", "MISE_DATA_DIR=/home/harness/.local/share/mise");
     }
   }
 
