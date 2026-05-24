@@ -501,13 +501,13 @@ async function run(prompt: string | null): Promise<void> {
   const interactive = process.stdin.isTTY;
   const ttyFlags = interactive ? ["-it"] : ["-i"];
 
-  let volumeArgs: string[];
+  let dockerExtraArgs: string[];
   if (fileArg) {
     const absFile = path.resolve(fileArg);
     const fileName = path.basename(absFile);
-    volumeArgs = ["-v", `${absFile}:/workspace/${fileName}`];
+    dockerExtraArgs = ["-v", `${absFile}:/workspace/${fileName}`];
   } else {
-    volumeArgs = ["-v", `${workspace}:/workspace`];
+    dockerExtraArgs = ["-v", `${workspace}:/workspace`];
     if (!effectiveEphemeral) {
       const persistRoot = path.join(
         xdgDataDir(),
@@ -526,13 +526,19 @@ async function run(prompt: string | null): Promise<void> {
       for (const mount of mounts) {
         const hostFullPath = path.join(persistRoot, mount.hostSubpath);
         fs.mkdirSync(hostFullPath, { recursive: true });
-        volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
+        dockerExtraArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
       }
       // Per-agent mise persistence
       const miseHostPath = path.join(persistRoot, "mise");
       fs.mkdirSync(miseHostPath, { recursive: true });
-      volumeArgs.push("-v", `${miseHostPath}:/home/harness/.local/share/mise`);
-      volumeArgs.push("-e", "MISE_DATA_DIR=/home/harness/.local/share/mise");
+      dockerExtraArgs.push(
+        "-v",
+        `${miseHostPath}:/home/harness/.local/share/mise`,
+      );
+      dockerExtraArgs.push(
+        "-e",
+        "MISE_DATA_DIR=/home/harness/.local/share/mise",
+      );
     }
   }
 
@@ -549,7 +555,7 @@ async function run(prompt: string | null): Promise<void> {
     ];
     for (const sd of skillDirs) {
       if (fs.existsSync(sd.host) && fs.statSync(sd.host).isDirectory()) {
-        volumeArgs.push("-v", `${sd.host}:${sd.container}`);
+        dockerExtraArgs.push("-v", `${sd.host}:${sd.container}`);
       }
     }
   }
@@ -574,7 +580,7 @@ async function run(prompt: string | null): Promise<void> {
     `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
     ...adapterDockerArgs,
-    ...volumeArgs,
+    ...dockerExtraArgs,
     ...userVolumeArgs,
     "-w",
     "/workspace",
