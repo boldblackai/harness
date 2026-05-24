@@ -360,7 +360,9 @@ function normalizeCwd(cwd: string): string {
 }
 
 function xdgDataDir(): string {
-  return process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+  return (
+    process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share")
+  );
 }
 
 function getImage(agent: string): string {
