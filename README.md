@@ -16,7 +16,7 @@ and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can poin
 - **Three agents, one CLI** — switch between `pi`, `opencode`, and `hermes` with `-a`. Same flags, same flow.
 - **Supply-chain hardened** — the image is signed and verified with cosign and SLSA provenance on every run; dependencies installed inside the container are always pinned and verified where possible and a 7-day "cooldown" is used to mitigate supply-chain attacks.
 - **Local-first** — defaults to LM Studio with `gemma-4-e4b`. Drop in an `--env-file` to use Anthropic, OpenRouter, OpenAI, Gemini, and others.
-- **Stateful or one-shot** — interactive runs persist agent state under `.harness/<agent>/`; one-shot prompts (`-p` or piped stdin) stay ephemeral.
+- **Stateful or one-shot** — interactive runs persist agent state under `$XDG_DATA_HOME/harness/<project>/<agent>/` (defaults to `~/.local/share/harness/`); one-shot prompts (`-p` or piped stdin) stay ephemeral.
 - **User skills** — automatically mounts `~/.agents/skills` and `~/.claude/skills` into the container so agents can discover and use custom skills. Disable with `--no-skills`.
 - **Zero install** — `npx @capotej/harness` just works.
 
@@ -95,7 +95,7 @@ npx @capotej/harness -p "write me a fizzbuzz in Go"
 # Pipe via stdin
 echo "write me a fizzbuzz in Go" | npx @capotej/harness
 
-# Interactive session (no -p, no piped stdin) — state persists under .harness/
+# Interactive session (no -p, no piped stdin) — state persists under XDG data dir
 npx @capotej/harness
 
 # Use a cloud provider via env file
@@ -204,11 +204,11 @@ The cooldown applies to transitive dependencies too. Older packages install norm
 
 ## Persistence
 
-Interactive runs (no `-p` and no piped stdin) bind-mount `.harness/<agent>/` from your working directory into the container. This lets agents resume sessions, skip database migrations on repeat runs, and retain memories across invocations.
+Interactive runs (no `-p` and no piped stdin) store persistence data at `$XDG_DATA_HOME/harness/<project>/<agent>/` (defaults to `~/.local/share/harness/`). The `<project>` segment is the working directory path with `/` replaced by `_` and the home prefix stripped. This lets agents resume sessions, skip database migrations on repeat runs, and retain memories across invocations. Per-agent `mise` tool data is also persisted at `<persist-root>/mise/`.
 
-One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no `.harness/` directory is created. Use `--ephemeral` to force-disable persistence on interactive runs.
+One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence data is created. Use `--ephemeral` to force-disable persistence on interactive runs.
 
-Add `.harness/` to your `.gitignore`.
+If an old `.harness/` directory exists in your working directory, harness will emit a deprecation warning with migration instructions.
 
 ## Reference
 

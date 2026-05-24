@@ -47,7 +47,7 @@ The image tag is selected at runtime based on `--agent`: pi uses `<version>`, ot
 
 **Cosign image verification (`verifyImage`):** On every run (unless `--no-verify` or `HARNESS_IMAGE_TAG` is set), harness verifies the container image was signed by the official CI workflow and carries a valid SLSA provenance attestation. Verified digests are cached at `~/.cache/harness/cosign-verified.json`. Requires `cosign` installed on the host.
 
-**Persistence:** Interactive runs (no `-p`, no piped stdin, no `--ephemeral`) bind-mount `.harness/<agent>/` from the working directory into the container. Each adapter declares its own mount points via `persistMounts()`. One-shot runs are implicitly ephemeral.
+**Persistence:** Interactive runs (no `-p`, no piped stdin, no `--ephemeral`) store persistence data at `$XDG_DATA_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/share/harness/`). The `<normalized-cwd>` is computed by `normalizeCwd()`: strips `os.homedir()` prefix, replaces `/` with `_`, uses `_home` if empty. Each adapter declares its own mount points via `persistMounts()`. Per-agent `mise` tool data is persisted at `<persist-root>/mise/` via a dedicated volume mount with `MISE_DATA_DIR=/home/harness/.local/share/mise`. One-shot runs are implicitly ephemeral. A deprecation warning is emitted if an old `.harness/` directory exists in the CWD.
 
 **User skills:** By default, harness bind-mounts the host user's skills directories into the container so agents can discover and use custom skills. Two source directories are checked (only if they exist on the host):
 
