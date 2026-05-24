@@ -20,7 +20,7 @@
     "prepare": "tsc",
     "lint": "pnpm lint:ts && pnpm lint:md && pnpm lint:sh && pnpm lint:docker && pnpm lint:actions",
     "lint:ts": "biome check .",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#.hermes\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\"",
     "lint:sh": "shellcheck entrypoint.sh entrypoint-opencode.sh entrypoint-hermes.sh",
     "lint:docker": "hadolint Dockerfile Dockerfile.opencode Dockerfile.hermes",
     "lint:actions": "actionlint",
