@@ -100,6 +100,18 @@ Run with: `pnpm test:e2e` (requires `pnpm build` first).
 
 The e2e workflow enforces 80% line/branch/function coverage thresholds via Node.js built-in `--experimental-test-coverage`. Locally, run: `pnpm test:coverage` (requires `pnpm build` first).
 
+## RFCs
+
+Significant changes, architectural decisions, and new features should be proposed as RFCs in the `rfcs/` directory. RFCs use the format `rfcs/YYYY-MM-DD_short_title.md` with the following structure:
+
+- `# Title` — short descriptive title
+- `**Date:**` — proposal date (ISO format)
+- `**Status:**` — `Proposed`, `Accepted`, `Implemented`, or `Rejected`
+- `## Goal` — what the RFC aims to accomplish
+- Remaining sections are free-form but typically include motivation, technical details, migration notes, and an implementation checklist
+
+See `rfcs/2025-05-23_agent_persistence.md` for a complete example.
+
 ## Rules
 
 - Keep `README.md` and `AGENTS.md` updated when changing CLI flags, options, architecture, Dockerfiles, CI workflows, or any behavior. If you change how something works, update both files to reflect it.
