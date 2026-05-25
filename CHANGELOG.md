@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.1] - 2026-05-25
+
+### Summary
+
+Introduces cloud/local mode (`HARNESS_CLOUD_MODE`) — passing `--env-file` now automatically switches agents to cloud mode where they auto-detect providers from API keys in the file, instead of hardcoding OpenRouter. Use `--local` to force local mode even with `--env-file` (e.g. `harness -e .env --local -p "..."`). Simplifies hermes persistence to a single directory and scopes npm persistence to the pi adapter. Adds multi-provider configs for opencode (Anthropic, Google, OpenAI, ZAI).
+
+### Changes
+
+- 967f1c2 scope mount to pi adapter, biome fixes for pi-lens (#79)
+- e1ace6c stop hardcoding openrouter, start multi provider support (#78)
+
 ## [1.8.0] - 2026-05-24
 
 ### Summary
