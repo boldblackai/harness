@@ -393,8 +393,8 @@ test("opencode: --model is passed via OPENCODE_MODEL env, not CLI", () => {
 
 test("hermes: no -m, no -p emits exactly ['hermes','chat'] (no stray flags)", () => {
   // Covers the no-model + interactive branch of HermesAdapter.buildCommand:
-  //   args = ["hermes","chat"]; no -m pushed (model falsy); no -q pushed
-  //   (prompt === null when no -p and no piped stdin).
+  //   args = ["hermes","chat"]; no -m pushed (model falsy);
+  //   no -q pushed (prompt === null when no -p and no piped stdin).
   // Locks that future refactors don't accidentally inject defaults for
   // either flag in the no-args path.
   //
@@ -1847,7 +1847,8 @@ test("--agent=hermes (equals form) selects the agent", () => {
   const idx = a.indexOf("hermes");
   assert.notEqual(idx, -1, `expected 'hermes' in: ${a.join(" ")}`);
   // hermes adapter shape: hermes chat -q <prompt>
-  assert.deepEqual(a.slice(idx, idx + 2), ["hermes", "chat"]);
+  assert.deepEqual(a.slice(idx, idx + 3), ["hermes", "chat", "-q"]);
+  assert.equal(a[idx + 3], "noop");
 });
 
 test("opencode: prompt is forwarded as `opencode run <prompt>`", () => {

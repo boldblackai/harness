@@ -60,13 +60,13 @@ Skills mounting applies to all run modes (interactive, one-shot, `--file`). Non-
 
 - `entrypoint.sh` (pi) — seeds pi defaults from `/etc/harness/pi-defaults`
 - `entrypoint-opencode.sh` — without `HARNESS_CLOUD_MODE`, sets LM Studio config and default model; with `HARNESS_CLOUD_MODE`, does nothing (agent auto-detects from env vars)
-- `entrypoint-hermes.sh` — without `HARNESS_CLOUD_MODE`, seeds local defaults into `/home/harness/.hermes`; with `HARNESS_CLOUD_MODE`, does nothing — agent auto-detects from env vars
+- `entrypoint-hermes.sh` — minimal entrypoint (hermes self-seeds on first run)
 
 **Cloud/local mode:** When `-e` is passed without `--local`, harness injects `HARNESS_CLOUD_MODE=1` into the container, signaling entrypoints to skip local defaults and let agents auto-detect providers from whatever API keys are in the env file. Without `-e` (or with `-e --local`), entrypoints use local mode (LM Studio, local configs). This is agent-agnostic — any provider key in the env file works without hardcoding specific variable names.
 
 **Dependency cooldown:** All dependencies must be at least 7 days old before upgrading. pnpm enforces this at build time via `PNPM_MINIMUM_RELEASE_AGE=10080`. uv enforces the same cooldown via `--exclude-newer=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')` passed directly to `uv pip install` in `Dockerfile.hermes`. hermes-agent is installed via `git clone` and therefore bypasses uv's cooldown; the `check-deps` skill enforces the 7-day window manually by parsing the release date from the `vYYYY.M.DD` tag format. For other deps (gh, cosign, etc.), the `check-deps` skill checks the GitHub release publish date against the 7-day window.
 
-**Agent configs:** `pi/models.json`, `opencode/lmstudio.json`, `opencode/openrouter.json`, `hermes/local.yaml` define provider/model settings copied into the container.
+**Agent configs:** `pi/models.json`, `opencode/lmstudio.json`, `opencode/openrouter.json`, `opencode/anthropic.json`, `opencode/openai.json`, `opencode/google.json`, `opencode/zai.json` define provider/model settings copied into the container.
 
 ## CI/CD
 

@@ -62,7 +62,7 @@ See the [full list of supported providers](https://github.com/badlogic/pi-mono/b
 [`opencode`](https://opencode.ai) uses LM Studio by default. Pass `--env-file` to switch to cloud mode — the agent auto-detects the provider from whichever API key is in the file:
 
 ```bash
-echo "OPENROUTER_API_KEY=sk-..." > .env
+echo 'OPENROUTER_API_KEY=sk-...' > .env
 npx @capotej/harness -e .env -p "write me a fizzbuzz in Go"
 ```
 
