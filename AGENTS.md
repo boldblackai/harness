@@ -122,3 +122,4 @@ See `rfcs/2025-05-23_agent_persistence.md` for a complete example.
 - All downloaded binaries in Dockerfiles MUST include checksum verification (sha256sum).
 - When adding a new agent adapter: add the class, register it in `ADAPTERS`, create a `Dockerfile.<name>`, `entrypoint-<name>.sh`, and update `Makefile` with `image-<name>` target.
 - E2E tests must remain runnable without Docker (shim-based).
+- GitHub Actions in `.github/workflows/` MUST pin third-party actions by full commit SHA (e.g. `actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd`), not by tag (e.g. `actions/checkout@v5`). Include the version tag as a comment for readability. Local actions (`uses: ./.github/actions/...`) are exempt.
