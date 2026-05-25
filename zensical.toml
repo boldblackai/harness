@@ -10,20 +10,20 @@ Copyright &copy; 2025 Julio Capote
 """
 
 nav = [
-  { "Home" = "docs/index.md" },
-  { "Getting Started" = "docs/getting-started.md" },
+  { "Home" = "index.md" },
+  { "Getting Started" = "getting-started.md" },
   { "Agents" = [
-    { "pi" = "docs/agents/pi.md" },
-    { "opencode" = "docs/agents/opencode.md" },
-    { "hermes" = "docs/agents/hermes.md" },
+    { "pi" = "agents/pi.md" },
+    { "opencode" = "agents/opencode.md" },
+    { "hermes" = "agents/hermes.md" },
   ]},
   { "Deploying" = [
-    { "fly.io" = "docs/deploying/fly.md" },
-    { "Kubernetes" = "docs/deploying/k8s.md" },
+    { "fly.io" = "deploying/fly.md" },
+    { "Kubernetes" = "deploying/k8s.md" },
   ]},
-  { "Configuration" = "docs/configuration.md" },
-  { "Security" = "docs/security.md" },
-  { "Persistence" = "docs/persistence.md" },
+  { "Configuration" = "configuration.md" },
+  { "Security" = "security.md" },
+  { "Persistence" = "persistence.md" },
 ]
 
 [project.theme]
