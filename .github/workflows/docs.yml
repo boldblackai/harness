@@ -36,6 +36,7 @@ jobs:
         with:
           path: site
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     environment:
       name: github-pages
