@@ -59,10 +59,11 @@ See the [full list of supported providers](https://github.com/badlogic/pi-mono/b
 
 #### opencode agent
 
-[`opencode`](https://opencode.ai) uses LM Studio by default. To use OpenRouter instead, pass an env file containing `OPENROUTER_API_KEY`:
+[`opencode`](https://opencode.ai) uses LM Studio by default. Pass `--env-file` to switch to cloud mode — the agent auto-detects the provider from whichever API key is in the file:
 
 ```bash
-npx @capotej/harness -p "write me a fizzbuzz in Go"
+echo "OPENROUTER_API_KEY=sk-..." > .env
+npx @capotej/harness -e .env -p "write me a fizzbuzz in Go"
 ```
 
 That's it. Your current directory is mounted at `/workspace` inside the container and the agent works against it.
@@ -146,18 +147,24 @@ See the [full provider list](https://github.com/badlogic/pi-mono/blob/c779c14e91
 
 ### opencode
 
-[`opencode`](https://opencode.ai) defaults to LM Studio. Drop `OPENROUTER_API_KEY` into your env file and it switches to OpenRouter automatically (`openrouter/auto` if no `-m`). The `-m` flag takes a bare model name; the provider prefix is added for you.
+[`opencode`](https://opencode.ai) defaults to LM Studio in local mode. Pass `--env-file` to enter cloud mode — the agent auto-detects the provider from whichever API key is in the file (`ZAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, etc.). The `-m` flag takes a bare model name; the provider prefix is added for you.
 
 ```bash
 npx @capotej/harness -a opencode -e .env -p "refactor the auth module"
 npx @capotej/harness -a opencode -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
 ```
 
+To pass env vars but stay in local mode, use `--local`:
+
+```bash
+npx @capotej/harness -a opencode -e .env --local -p "refactor the auth module"
+```
+
 When using LM Studio locally, set the model's context length to at least 32k tokens.
 
 ### hermes
 
-[`hermes`](https://github.com/NousResearch/hermes-agent) by NousResearch supports many providers. Pass an env file with your key and a `provider/model` to `-m`:
+[`hermes`](https://github.com/NousResearch/hermes-agent) by NousResearch supports many providers. Pass `--env-file` to enter cloud mode — the agent auto-detects the provider from whichever API key is in the file. Use a `provider/model` for `-m`:
 
 ```bash
 npx @capotej/harness -a hermes -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
@@ -225,6 +232,7 @@ If an old `.harness/` directory exists in your working directory, harness will e
 | `--no-verify` |       | Skip cosign signature and provenance verification |
 | `--no-skills` |       | Disable mounting user skills directories (`~/.agents/skills`, `~/.claude/skills`) |
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
+| `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
 | `--help`      | `-h`  | Show help |
 
 ### Environment variables
@@ -236,8 +244,8 @@ If an old `.harness/` directory exists in your working directory, harness will e
 ### Agent-specific behavior
 
 - **pi** — `-m` is passed straight to the binary as `--model`.
-- **opencode** — `-m` is passed via the `OPENCODE_MODEL` env var. Provider is auto-detected from the env file (`OPENROUTER_API_KEY` → OpenRouter, otherwise LM Studio).
-- **hermes** — `-m` is passed as `--model` in `provider/model` form. Provider is auto-detected from whichever API key is present.
+- **opencode** — `-m` is passed via the `OPENCODE_MODEL` env var. Without `-e`, uses LM Studio locally. With `-e`, enters cloud mode and auto-detects the provider from whichever API key is in the env file. Use `--local` to force local mode even with `-e`.
+- **hermes** — `-m` is passed as `--model` in `provider/model` form. Without `-e`, uses local config. With `-e`, enters cloud mode and auto-detects from env vars. Use `--local` to force local mode even with `-e`.
 
 ## Deploying hermes as a claw
 

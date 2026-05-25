@@ -13,7 +13,7 @@
 // the cosign verification skip path (HARNESS_IMAGE_TAG and --no-verify).
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -462,6 +462,64 @@ test("--env-file is passed to docker as --env-file <abs>", () => {
   const i = a.indexOf("--env-file");
   assert.notEqual(i, -1);
   assert.equal(a[i + 1], ENV_FILE); // resolved to abs path; ENV_FILE already abs
+});
+
+// ---- cloud/local mode (HARNESS_CLOUD_MODE) ---------------------------------
+
+test("-e without --local sets HARNESS_CLOUD_MODE=1 (cloud mode)", () => {
+  const r = runCli(["-e", ENV_FILE, "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  const idx = a.findIndex(
+    (v, i) => v === "-e" && a[i + 1] === "HARNESS_CLOUD_MODE=1",
+  );
+  assert.notEqual(idx, -1, `HARNESS_CLOUD_MODE=1 not found in: ${a.join(" ")}`);
+});
+
+test("no -e does NOT set HARNESS_CLOUD_MODE (local mode)", () => {
+  const r = runCli(["-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  const has = a.some(
+    (v, i) => v === "-e" && a[i + 1]?.startsWith("HARNESS_CLOUD_MODE"),
+  );
+  assert.ok(
+    !has,
+    `HARNESS_CLOUD_MODE should not be set without -e: ${a.join(" ")}`,
+  );
+});
+
+test("-e with --local does NOT set HARNESS_CLOUD_MODE (forced local)", () => {
+  const r = runCli(["-e", ENV_FILE, "--local", "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  // --env-file should still be present
+  assert.notEqual(a.indexOf("--env-file"), -1);
+  const has = a.some(
+    (v, i) => v === "-e" && a[i + 1]?.startsWith("HARNESS_CLOUD_MODE"),
+  );
+  assert.ok(
+    !has,
+    `HARNESS_CLOUD_MODE should not be set with --local: ${a.join(" ")}`,
+  );
+});
+
+test("cloud mode works for all agents (pi, opencode, hermes)", () => {
+  for (const agent of ["pi", "opencode", "hermes"]) {
+    const r = runCli(["-a", agent, "-e", ENV_FILE, "-p", "noop"]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    const has = a.some(
+      (v, i) => v === "-e" && a[i + 1] === "HARNESS_CLOUD_MODE=1",
+    );
+    assert.ok(has, `${agent}: HARNESS_CLOUD_MODE=1 expected: ${a.join(" ")}`);
+  }
+});
+
+test("--help documents --local flag", () => {
+  const r = spawnSync("node", [CLI, "--help"], { encoding: "utf8" });
+  assert.match(r.stdout, /--local/);
+  assert.match(r.stdout, /local mode/i);
 });
 
 // ---- file mount vs cwd mount -----------------------------------------------
@@ -1516,15 +1574,11 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
   }
 });
 
-test("hermes interactive (no --ephemeral) creates both persistence dirs and mounts", () => {
-  // HermesAdapter.persistMounts() returns two distinct mounts:
-  //   - local      -> /home/harness/.hermes-local
-  //   - openrouter -> /home/harness/.hermes-openrouter
+test("hermes interactive (no --ephemeral) creates persistence dir and mounts", () => {
+  // HermesAdapter.persistMounts() returns a single mount:
+  //   '' -> /home/harness/.hermes
   //
-  // The pi adapter test only locks a single empty-hostSubpath mount and
-  // PR #30 (mine, merged) locks the opencode 3-mount shape. This is the
-  // analog test for hermes's 2-mount shape so a future refactor cannot
-  // silently drop one of the two hermes persistence buckets.
+  // The empty hostSubpath means the persist root itself is mounted directly.
   const which = spawnSync("sh", ["-c", "command -v script"], {
     encoding: "utf8",
   });
@@ -1552,30 +1606,22 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
   );
   assert.equal(r.status, 0, r.stderr);
 
-  // Both host-side persistence buckets must be created under XDG.
+  // Host-side persistence dir must be created under XDG.
   const nCwd = normalizeCwd(localWork, homeDir);
-  for (const sub of ["local", "openrouter"]) {
-    assert.equal(
-      fs.existsSync(path.join(xdgData, "harness", nCwd, "hermes", sub)),
-      true,
-      `XDG_DATA_HOME/harness/${nCwd}/hermes/${sub}/ should be created in interactive mode`,
-    );
-  }
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness", nCwd, "hermes")),
+    true,
+    `XDG_DATA_HOME/harness/${nCwd}/hermes/ should be created in interactive mode`,
+  );
 
-  // Both docker -v mounts must target the documented container paths.
+  // Docker -v mount must target the default hermes home.
   const cleaned = r.stdout.replace(/\r/g, "");
   const a = dockerArgs(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
-  const targets = [
-    "/home/harness/.hermes-local",
-    "/home/harness/.hermes-openrouter",
-  ];
-  for (const t of targets) {
-    assert.ok(
-      a.some((arg) => arg.endsWith(`:${t}`)),
-      `expected -v mount ending in :${t} in: ${a.join(" ")}`,
-    );
-  }
+  assert.ok(
+    a.some((arg) => arg.endsWith(":/home/harness/.hermes")),
+    `expected -v mount ending in :/home/harness/.hermes in: ${a.join(" ")}`,
+  );
 });
 
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {

@@ -56,15 +56,17 @@ The image tag is selected at runtime based on `--agent`: pi uses `<version>`, ot
 
 Skills mounting applies to all run modes (interactive, one-shot, `--file`). Non-existent directories are silently skipped. Disable with `--no-skills`.
 
-**Entrypoints:** Each variant has its own entrypoint that seeds default configs into the agent's home directory and detects the provider from env vars:
+**Entrypoints:** Each variant has its own entrypoint that seeds default configs into the agent's home directory and selects local vs cloud mode based on the `HARNESS_CLOUD_MODE` env var:
 
 - `entrypoint.sh` (pi) — seeds pi defaults from `/etc/harness/pi-defaults`
-- `entrypoint-opencode.sh` — detects `OPENROUTER_API_KEY` to switch between LM Studio and OpenRouter configs; sets `OPENCODE_MODEL` env var
-- `entrypoint-hermes.sh` — seeds hermes defaults from `/etc/harness/hermes-defaults/{local,openrouter}`; sets `HERMES_HOME` based on provider
+- `entrypoint-opencode.sh` — without `HARNESS_CLOUD_MODE`, sets LM Studio config and default model; with `HARNESS_CLOUD_MODE`, does nothing (agent auto-detects from env vars)
+- `entrypoint-hermes.sh` — without `HARNESS_CLOUD_MODE`, seeds local defaults into `/home/harness/.hermes`; with `HARNESS_CLOUD_MODE`, does nothing — agent auto-detects from env vars
+
+**Cloud/local mode:** When `-e` is passed without `--local`, harness injects `HARNESS_CLOUD_MODE=1` into the container, signaling entrypoints to skip local defaults and let agents auto-detect providers from whatever API keys are in the env file. Without `-e` (or with `-e --local`), entrypoints use local mode (LM Studio, local configs). This is agent-agnostic — any provider key in the env file works without hardcoding specific variable names.
 
 **Dependency cooldown:** All dependencies must be at least 7 days old before upgrading. pnpm enforces this at build time via `PNPM_MINIMUM_RELEASE_AGE=10080`. uv enforces the same cooldown via `--exclude-newer=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')` passed directly to `uv pip install` in `Dockerfile.hermes`. hermes-agent is installed via `git clone` and therefore bypasses uv's cooldown; the `check-deps` skill enforces the 7-day window manually by parsing the release date from the `vYYYY.M.DD` tag format. For other deps (gh, cosign, etc.), the `check-deps` skill checks the GitHub release publish date against the 7-day window.
 
-**Agent configs:** `pi/models.json`, `opencode/lmstudio.json`, `opencode/openrouter.json`, `hermes/local.yaml`, `hermes/openrouter.yaml` define provider/model settings copied into the container.
+**Agent configs:** `pi/models.json`, `opencode/lmstudio.json`, `opencode/openrouter.json`, `hermes/local.yaml` define provider/model settings copied into the container.
 
 ## CI/CD
 
@@ -89,6 +91,7 @@ E2E tests in `tests/e2e/cli.test.mjs` use a docker shim (a fake `docker` binary 
 - Volume mount construction (file vs directory, adapter-specific mount points)
 - `--env-file` forwarding across all adapters
 - `--model` handling (local vs env-file mode, `--provider ollama` injection)
+- Cloud/local mode (`HARNESS_CLOUD_MODE`, `--local` flag)
 - User skills mounting (`~/.agents/skills`, `~/.claude/skills`, `--no-skills` flag)
 
 Run with: `pnpm test:e2e` (requires `pnpm build` first).
