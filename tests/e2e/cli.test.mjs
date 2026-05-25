@@ -2151,6 +2151,17 @@ test("interactive mode creates mise dir and mounts it at /home/harness/.local/sh
       a.some((arg) => arg.endsWith(":/home/harness/.local/state/mise")),
       `expected mise state volume mount in: ${a.join(" ")}`,
     );
+    // Verify npm dir on host
+    const npmDir = path.join(xdgData, "harness", nCwd, "pi", "npm");
+    assert.equal(
+      fs.existsSync(npmDir),
+      true,
+      `npm dir should exist at ${npmDir}`,
+    );
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/share/npm")),
+      `expected npm volume mount in: ${a.join(" ")}`,
+    );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -2191,6 +2202,11 @@ test("ephemeral mode (-p) does NOT create mise dir or mount", () => {
       a.some((arg) => arg.endsWith(":/home/harness/.local/state/mise")),
       false,
       "ephemeral mode must not mount mise state",
+    );
+    assert.equal(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/share/npm")),
+      false,
+      "ephemeral mode must not mount npm",
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
