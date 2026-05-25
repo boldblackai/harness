@@ -36,7 +36,6 @@ jobs:
         with:
           path: site
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     environment:
       name: github-pages
