@@ -10,6 +10,8 @@
 Harness conveniently wraps Docker around three open-source coding agents — [`pi`](https://pi.dev/), [`opencode`](https://opencode.ai),
 and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can point one at a directory (or file) without giving it access to your entire machine.
 
+> **Documentation:** [capotej.github.io/harness](https://capotej.github.io/harness/)
+
 ## Features
 
 - **Sandboxed by default** — capability-dropped container with `no-new-privileges`; the agent only sees the directory (or file) you mount.

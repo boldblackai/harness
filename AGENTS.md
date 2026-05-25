@@ -4,6 +4,8 @@
 
 **Harness** is a portable containerized environment for running coding agents. See README.md for more project details.
 
+**Documentation website:** Built with [Zensical](https://zensical.org) from `docs/`. Config in `zensical.toml`. Deploys to GitHub Pages via `.github/workflows/docs.yml`. Build locally with `pip install zensical && zensical build --clean`.
+
 ## Commands
 
 ```bash
