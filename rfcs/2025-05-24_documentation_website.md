@@ -1,7 +1,7 @@
 # Documentation Website: Zensical + GitHub Pages
 
 **Date:** 2025-05-24
-**Status:** Proposed
+**Status:** Implemented
 
 ## Goal
 
