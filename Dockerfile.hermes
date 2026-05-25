@@ -89,17 +89,11 @@ RUN apt-get update && \
     && uv venv /opt/hermes-agent/venv --python python3 \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
-    && mkdir -p /etc/harness/hermes-defaults/local/{sessions,logs,hooks,memories,skills,plans,workspace} \
-    && mkdir -p /etc/harness/hermes-defaults/openrouter/{sessions,logs,hooks,memories,skills,plans,workspace} \
-    && cp /opt/hermes-agent/.env.example /etc/harness/hermes-defaults/local/.env \
-    && cp /opt/hermes-agent/.env.example /etc/harness/hermes-defaults/openrouter/.env \
-    && chown -R harness:harness /etc/harness/hermes-defaults \
     && chown -R harness:harness /opt/hermes-agent \
     && rm -rf /opt/hermes-agent/.git /root/.cache/uv \
     && rm -rf /var/lib/apt/lists/*
 
-COPY hermes/local.yaml /etc/harness/hermes-defaults/local/config.yaml
-COPY hermes/openrouter.yaml /etc/harness/hermes-defaults/openrouter/config.yaml
+COPY hermes/local.yaml /etc/harness/hermes-local.yaml
 
 COPY entrypoint-hermes.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

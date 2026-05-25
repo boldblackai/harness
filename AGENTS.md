@@ -47,7 +47,7 @@ The image tag is selected at runtime based on `--agent`: pi uses `<version>`, ot
 
 **Cosign image verification (`verifyImage`):** On every run (unless `--no-verify` or `HARNESS_IMAGE_TAG` is set), harness verifies the container image was signed by the official CI workflow and carries a valid SLSA provenance attestation. Verified digests are cached at `~/.cache/harness/cosign-verified.json`. Requires `cosign` installed on the host.
 
-**Persistence:** Interactive runs (no `-p`, no piped stdin, no `--ephemeral`) store persistence data at `$XDG_DATA_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/share/harness/`). The `<normalized-cwd>` is computed by `normalizeCwd()`: strips `os.homedir()` prefix, replaces `/` with `_`, uses `_home` if empty. Each adapter declares its own mount points via `persistMounts()`. Per-agent `mise` data is persisted via two volume mounts: `<persist-root>/mise/` → `/home/harness/.local/share/mise` (tools/plugins, `MISE_DATA_DIR`) and `<persist-root>/mise-state/` → `/home/harness/.local/state/mise` (trust settings, `MISE_STATE_DIR`). One-shot runs are implicitly ephemeral. A deprecation warning is emitted if an old `.harness/` directory exists in the CWD.
+**Persistence:** Interactive runs (no `-p`, no piped stdin, no `--ephemeral`) store persistence data at `$XDG_DATA_HOME/harness/<normalized-cwd>/<agent>/` (defaults to `~/.local/share/harness/`). The `<normalized-cwd>` is computed by `normalizeCwd()`: strips `os.homedir()` prefix, replaces `/` with `_`, uses `_home` if empty. Each adapter declares its own mount points via `persistMounts()`. Per-agent persistence includes: `<persist-root>/mise/` → `/home/harness/.local/share/mise` (tools/plugins, `MISE_DATA_DIR`), `<persist-root>/mise-state/` → `/home/harness/.local/state/mise` (trust settings, `MISE_STATE_DIR`), and `<persist-root>/npm/` → `/home/harness/.local/share/npm` (pi adapter only: extensions/skills installed via `npm install -g`, `NPM_CONFIG_PREFIX`). One-shot runs are implicitly ephemeral. A deprecation warning is emitted if an old `.harness/` directory exists in the CWD.
 
 **User skills:** By default, harness bind-mounts the host user's skills directories into the container so agents can discover and use custom skills. Two source directories are checked (only if they exist on the host):
 
@@ -56,15 +56,17 @@ The image tag is selected at runtime based on `--agent`: pi uses `<version>`, ot
 
 Skills mounting applies to all run modes (interactive, one-shot, `--file`). Non-existent directories are silently skipped. Disable with `--no-skills`.
 
-**Entrypoints:** Each variant has its own entrypoint that seeds default configs into the agent's home directory and detects the provider from env vars:
+**Entrypoints:** Each variant has its own entrypoint that seeds default configs into the agent's home directory and selects local vs cloud mode based on the `HARNESS_CLOUD_MODE` env var:
 
 - `entrypoint.sh` (pi) — seeds pi defaults from `/etc/harness/pi-defaults`
-- `entrypoint-opencode.sh` — detects `OPENROUTER_API_KEY` to switch between LM Studio and OpenRouter configs; sets `OPENCODE_MODEL` env var
-- `entrypoint-hermes.sh` — seeds hermes defaults from `/etc/harness/hermes-defaults/{local,openrouter}`; sets `HERMES_HOME` based on provider
+- `entrypoint-opencode.sh` — without `HARNESS_CLOUD_MODE`, sets LM Studio config and default model; with `HARNESS_CLOUD_MODE`, does nothing (agent auto-detects from env vars)
+- `entrypoint-hermes.sh` — minimal entrypoint (hermes self-seeds on first run)
+
+**Cloud/local mode:** When `-e` is passed without `--local`, harness injects `HARNESS_CLOUD_MODE=1` into the container, signaling entrypoints to skip local defaults and let agents auto-detect providers from whatever API keys are in the env file. Without `-e` (or with `-e --local`), entrypoints use local mode (LM Studio, local configs). This is agent-agnostic — any provider key in the env file works without hardcoding specific variable names.
 
 **Dependency cooldown:** All dependencies must be at least 7 days old before upgrading. pnpm enforces this at build time via `PNPM_MINIMUM_RELEASE_AGE=10080`. uv enforces the same cooldown via `--exclude-newer=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')` passed directly to `uv pip install` in `Dockerfile.hermes`. hermes-agent is installed via `git clone` and therefore bypasses uv's cooldown; the `check-deps` skill enforces the 7-day window manually by parsing the release date from the `vYYYY.M.DD` tag format. For other deps (gh, cosign, etc.), the `check-deps` skill checks the GitHub release publish date against the 7-day window.
 
-**Agent configs:** `pi/models.json`, `opencode/lmstudio.json`, `opencode/openrouter.json`, `hermes/local.yaml`, `hermes/openrouter.yaml` define provider/model settings copied into the container.
+**Agent configs:** `pi/models.json`, `opencode/lmstudio.json`, `opencode/openrouter.json`, `opencode/anthropic.json`, `opencode/openai.json`, `opencode/google.json`, `opencode/zai.json` define provider/model settings copied into the container.
 
 ## CI/CD
 
@@ -86,9 +88,10 @@ E2E tests in `tests/e2e/cli.test.mjs` use a docker shim (a fake `docker` binary 
 - Image tag selection per agent
 - Security flags (`--cap-drop=ALL`, `--security-opt`, etc.)
 - Persistence vs ephemeral behavior (TTY detection, `--ephemeral`, `-p`)
-- Volume mount construction (file vs directory, adapter-specific mount points)
+- Volume mount construction (file vs directory, adapter-specific mount points, npm persistence)
 - `--env-file` forwarding across all adapters
 - `--model` handling (local vs env-file mode, `--provider ollama` injection)
+- Cloud/local mode (`HARNESS_CLOUD_MODE`, `--local` flag)
 - User skills mounting (`~/.agents/skills`, `~/.claude/skills`, `--no-skills` flag)
 
 Run with: `pnpm test:e2e` (requires `pnpm build` first).

@@ -4,13 +4,13 @@ FROM ${BASE_IMAGE}
 USER root
 
 RUN pnpm install -g opencode-ai@1.15.10 && \
+    cd $(pnpm root -g)/opencode-ai && node postinstall.mjs && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm
 
 RUN mkdir -p /etc/opencode
 
-COPY opencode/lmstudio.json /etc/opencode/lmstudio.json
-COPY opencode/openrouter.json /etc/opencode/openrouter.json
+COPY opencode/*.json /etc/opencode/
 
 COPY entrypoint-opencode.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
