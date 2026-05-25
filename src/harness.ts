@@ -18,6 +18,7 @@ interface Args extends ParsedArgs {
   // minimist --no- prefix: --no-verify / --no-skills set these to false; NOT in boolean[] to avoid double-negation
   verify?: boolean;
   ephemeral: boolean;
+  local: boolean;
   skills?: boolean;
   "env-file"?: string;
   e?: string;
@@ -65,7 +66,10 @@ class PiAdapter implements AgentAdapter {
   }
 
   persistMounts(): PersistMount[] {
-    return [{ hostSubpath: "", containerPath: "/home/harness/.pi/agent" }];
+    return [
+      { hostSubpath: "", containerPath: "/home/harness/.pi/agent" },
+      { hostSubpath: "npm", containerPath: "/home/harness/.local/share/npm" },
+    ];
   }
 }
 
@@ -108,13 +112,7 @@ class HermesAdapter implements AgentAdapter {
   }
 
   persistMounts(): PersistMount[] {
-    return [
-      { hostSubpath: "local", containerPath: "/home/harness/.hermes-local" },
-      {
-        hostSubpath: "openrouter",
-        containerPath: "/home/harness/.hermes-openrouter",
-      },
-    ];
+    return [{ hostSubpath: "", containerPath: "/home/harness/.hermes" }];
   }
 }
 
@@ -328,6 +326,7 @@ Options:
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
+  --local                Force local mode even with -e (use LM Studio / local defaults)
   -h, --help             Show this help message
 
 Environment variables:
@@ -371,7 +370,7 @@ function getImage(agent: string): string {
 }
 
 const MINIMIST_OPTS = {
-  boolean: ["help", "h", "ephemeral"],
+  boolean: ["help", "h", "ephemeral", "local"],
   string: [
     "env-file",
     "e",
@@ -408,6 +407,7 @@ const argv = minimist<Args>(process.argv.slice(2), MINIMIST_OPTS);
     ...Object.values(MINIMIST_OPTS.alias),
     "verify", // --no-verify sets verify=false
     "skills", // --no-skills sets skills=false
+    "local",
   ]);
   const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
   if (unknown.length > 0) {
@@ -424,6 +424,7 @@ if (argv.help) {
 
 const noVerify = argv.verify === false;
 const noSkills = argv.skills === false;
+const localMode = argv.local;
 const envFilePath = argv["env-file"] || null;
 const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
@@ -492,6 +493,11 @@ async function run(prompt: string | null): Promise<void> {
   const envFileArgs = envFilePath
     ? ["--env-file", path.resolve(envFilePath)]
     : [];
+
+  // Cloud mode: -e without --local signals entrypoints to skip local/defaults
+  // and let agents auto-detect providers from env vars in the file.
+  const cloudModeEnv =
+    envFilePath && !localMode ? ["-e", "HARNESS_CLOUD_MODE=1"] : [];
 
   const adapter = ADAPTERS[agentName];
   const adapterOptions = { prompt, model: modelArg, envFilePath };
@@ -575,6 +581,7 @@ async function run(prompt: string | null): Promise<void> {
     "--security-opt",
     `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
+    ...cloudModeEnv,
     ...adapterDockerArgs,
     ...volumeArgs,
     ...userVolumeArgs,
