@@ -41,10 +41,7 @@ docs/
 │   └── k8s.md              # (moved from docs/deploying-to-k8s.md)
 ├── configuration.md         # CLI flags, env vars, config files
 ├── persistence.md           # XDG persistence explained
-├── security.md              # Cosign verification, seccomp, capabilities
-└── rfcs/                   # Rendered RFCs
-    ├── 2025-05-23_agent_persistence.md
-    └── 2025-05-24_documentation_website.md
+└── security.md              # Cosign verification, seccomp, capabilities
 zensical.toml               # Site configuration
 .github/workflows/docs.yml  # CI/CD workflow
 ```
@@ -98,11 +95,11 @@ jobs:
 - All existing CI/CD workflows are unaffected
 - No changes to CLI, Dockerfiles, or test infrastructure
 
-## Questions
+## Resolved Decisions
 
-- Should the documentation site live in a separate repository (e.g., `capotej/harness-docs`) or in a `docs/` subdirectory of the main repo? This proposal assumes in-repo for simplicity.
-- Should RFCs be automatically included or curated manually?
-- Should the site support versioned docs (one set per release) or just track `main`?
+- **Repository placement:** In-repo, under a `docs/` subdirectory
+- **RFCs:** Omitted from the documentation site (remain in-repo only)
+- **Versioning:** Track `main` only, no per-release versioning
 
 ## Implementation Checklist
 
