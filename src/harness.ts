@@ -66,7 +66,10 @@ class PiAdapter implements AgentAdapter {
   }
 
   persistMounts(): PersistMount[] {
-    return [{ hostSubpath: "", containerPath: "/home/harness/.pi/agent" }];
+    return [
+      { hostSubpath: "", containerPath: "/home/harness/.pi/agent" },
+      { hostSubpath: "npm", containerPath: "/home/harness/.local/share/npm" },
+    ];
   }
 }
 
