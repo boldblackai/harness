@@ -120,30 +120,21 @@ Omit `### Dependency Updates` and `### Upstream Release Notes` entirely if there
 
 Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits automatically and would interfere with the jj workflow.
 
-## Step 5b: Update pinned hermes image tags in deploy guides
+## Step 5b: Update hermes image tag in deploy guides
 
-The hermes claw deploy docs pin the upstream image tag (e.g. `ghcr.io/capotej/harness:hermes-1.8.1`). On every release, bump **all** of these to match the new `package.json` version.
+The hermes claw deploy guides pin the upstream image tag (e.g. `ghcr.io/capotej/harness:hermes-1.8.1`). Update every occurrence to match the new `package.json` version. Each guide exists twice — the in-repo copy (`docs/deploying-to-*.md`, linked from README) and the docs-site copy (`docs/deploying/*.md`) — keep both in sync.
 
-There are two copies of the fly and k8s guides — keep them in sync:
-
-| File | What to update |
-|---|---|
-| `docs/deploying-to-fly.md` | `fly.toml` `[build] image`, and the `FROM ghcr.io/capotej/harness:hermes-…` example in "Customizing the claw" |
-| `docs/deploying/fly.md` | Same content as above (Zensical docs site copy) |
-| `docs/deploying-to-k8s.md` | Architecture table, prerequisites, and Deployment manifest `image:` |
-| `docs/deploying/k8s.md` | Same content as above (Zensical docs site copy) |
-| `docs/deploying-to-aws.md` | `HARNESS_IMAGE` export, ECS task-definition `"image"`, and the EC2 systemd `docker run` image |
-| `docs/deploying/aws.md` | Same content as above (Zensical docs site copy) |
-
-Search every deploy guide for `ghcr.io/capotej/harness:hermes-` and replace the version suffix with the new release version. Preview first:
-
-```bash
-rg 'ghcr\.io/capotej/harness:hermes-[0-9.]+' \
-  docs/deploying-to-fly.md docs/deploying-to-k8s.md docs/deploying-to-aws.md \
-  docs/deploying/fly.md docs/deploying/k8s.md docs/deploying/aws.md
+```toml
+image = "ghcr.io/capotej/harness:hermes-<new-version>"
 ```
 
-Then replace every `hermes-<old-version>` with `hermes-<new-version>` across all files that matched. Do not edit `README.md` for this — it only links to the deploy guides, it does not embed a pinned tag.
+Search for the pattern `hermes-[0-9]` in these files and replace all occurrences with the new version:
+
+- `docs/deploying-to-fly.md` and `docs/deploying/fly.md`
+- `docs/deploying-to-k8s.md` and `docs/deploying/k8s.md`
+- `docs/deploying-to-aws.md` and `docs/deploying/aws.md`
+
+Do not edit `README.md` — it only links to the guides.
 
 ## Step 6: Build
 
