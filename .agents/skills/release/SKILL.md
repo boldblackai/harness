@@ -120,16 +120,24 @@ Omit `### Dependency Updates` and `### Upstream Release Notes` entirely if there
 
 Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits automatically and would interfere with the jj workflow.
 
-## Step 5b: Update hermes image tag in README.md
+## Step 5b: Update pinned hermes image tags in deploy guides
 
-The fly.toml example in `README.md` contains a pinned hermes image tag (e.g. `ghcr.io/capotej/harness:hermes-1.4.4`). Update it to the new version:
+The hermes claw deploy docs pin the upstream image tag (e.g. `ghcr.io/capotej/harness:hermes-1.6.4`). On every release, bump **all** of these to match the new `package.json` version:
 
-```toml
-image = "ghcr.io/capotej/harness:hermes-<new-version>"
+| File | What to update |
+|---|---|
+| `docs/deploying-to-fly.md` | `fly.toml` `[build] image`, and the `FROM ghcr.io/capotej/harness:hermes-…` example in "Customizing the claw" |
+| `docs/deploying-to-aws.md` | `HARNESS_IMAGE` export, ECS task-definition `"image"`, and the EC2 systemd `docker run` image |
+| `docs/deploying-to-k8s.md` | Architecture table, prerequisites, and Deployment manifest `image:` |
 
+Search each file for `ghcr.io/capotej/harness:hermes-` and replace the version suffix with the new release version. A single pass with:
+
+```bash
+# Preview first — every match should be the old hermes-<version> tag
+rg 'ghcr\.io/capotej/harness:hermes-[0-9.]+' docs/deploying-to-fly.md docs/deploying-to-aws.md docs/deploying-to-k8s.md
 ```
 
-Search for the pattern `hermes-[0-9]` in `README.md` and replace all occurrences with the new version.
+Then replace every `hermes-<old-version>` with `hermes-<new-version>` across those three files. Do not edit `README.md` for this — it only links to the deploy guides, it no longer embeds a pinned tag.
 
 ## Step 6: Build
 
