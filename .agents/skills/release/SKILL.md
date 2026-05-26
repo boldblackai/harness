@@ -133,7 +133,7 @@ There are two copies of the fly and k8s guides — keep them in sync:
 | `docs/deploying-to-k8s.md` | Architecture table, prerequisites, and Deployment manifest `image:` |
 | `docs/deploying/k8s.md` | Same content as above (Zensical docs site copy) |
 | `docs/deploying-to-aws.md` | `HARNESS_IMAGE` export, ECS task-definition `"image"`, and the EC2 systemd `docker run` image |
-| `docs/deploying/aws.md` | Same content as above, once added to the docs site nav in `zensical.toml` |
+| `docs/deploying/aws.md` | Same content as above (Zensical docs site copy) |
 
 Search every deploy guide for `ghcr.io/capotej/harness:hermes-` and replace the version suffix with the new release version. Preview first:
 
@@ -142,8 +142,6 @@ rg 'ghcr\.io/capotej/harness:hermes-[0-9.]+' \
   docs/deploying-to-fly.md docs/deploying-to-k8s.md docs/deploying-to-aws.md \
   docs/deploying/fly.md docs/deploying/k8s.md docs/deploying/aws.md
 ```
-
-(`docs/deploying/aws.md` may not exist yet — skip if missing.)
 
 Then replace every `hermes-<old-version>` with `hermes-<new-version>` across all files that matched. Do not edit `README.md` for this — it only links to the deploy guides, it does not embed a pinned tag.
 

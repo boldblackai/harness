@@ -20,6 +20,7 @@ nav = [
   { "Deploying" = [
     { "fly.io" = "deploying/fly.md" },
     { "Kubernetes" = "deploying/k8s.md" },
+    { "AWS" = "deploying/aws.md" },
   ]},
   { "Configuration" = "configuration.md" },
   { "Security" = "security.md" },
