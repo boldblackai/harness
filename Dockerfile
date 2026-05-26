@@ -1,4 +1,4 @@
-FROM debian:stable-slim@sha256:8f0c555de6a2f9c2bda1b170b67479d11f7f5e3b66bb4a7a1d8843361c9dd3ff
+FROM debian:stable-slim@sha256:5012d0517aa0075a7150a45aae67586641e898913b7af3b08228108565b5f90c
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -52,7 +52,7 @@ ENV PNPM_MINIMUM_RELEASE_AGE=10080
 ENV PATH=$PNPM_HOME:$PATH
 
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate && \
-    pnpm install -g @mariozechner/pi-coding-agent@0.71.1 && \
+    pnpm install -g @mariozechner/pi-coding-agent@0.73.1 && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm && \
     mkdir -p /etc/harness/pi-defaults && \
@@ -96,6 +96,14 @@ RUN set -eux && \
         -o /tini && \
     echo "${EXPECTED}  /tini" | sha256sum --check --strict && \
     chmod +x /tini
+
+RUN mkdir -p /home/harness/.local/share/npm /home/harness/.local/state /home/harness/.config && \
+    chown -R harness:harness /home/harness/.local /home/harness/.config
+
+# Let npm install -g work for the harness user (avoid root-owned /usr/lib/node_modules)
+# Using /home/harness/.local/share/npm so it can be persisted alongside mise via volume mounts
+ENV NPM_CONFIG_PREFIX=/home/harness/.local/share/npm
+ENV PATH=/home/harness/.local/share/npm/bin:$PATH
 
 USER harness
 WORKDIR /app

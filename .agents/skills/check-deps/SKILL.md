@@ -86,7 +86,7 @@ This project pins eight external dependencies across its Dockerfiles. Check each
 
 ## Notes on specific deps
 
-**uv**: Two things need updating together — `UV_VERSION` and `UV_DIGEST`. When a new version is available, look up its image digest with `docker manifest inspect ghcr.io/astral-sh/uv:<NEW_VERSION> | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['config']['digest'])"` and report both values.
+**uv**: Two things need updating together — `UV_VERSION` and `UV_DIGEST`. The `UV_DIGEST` must be the **multi-arch index digest** (not a per-platform manifest digest). The attestation verification step queries `https://api.github.com/repos/astral-sh/uv/attestations/${UV_DIGEST}`, and attestations are only published at the index level — a per-arch digest will return 404 and break the build. Look up the index digest with `docker buildx imagetools inspect ghcr.io/astral-sh/uv:<NEW_VERSION> 2>&1 | head -4` and take the `Digest:` value from the top-level output (the line after `Name:`). Report both `UV_VERSION` and `UV_DIGEST` values.
 
 **debian:stable-slim**: The digest pins the exact image layer. If `docker pull` reports a different digest than what's in the Dockerfile, the base image has been updated. This requires re-pulling to get the new digest — mention this to the user rather than computing it automatically, since a pull may not always be desirable.
 

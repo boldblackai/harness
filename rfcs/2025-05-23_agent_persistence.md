@@ -1,7 +1,7 @@
 # Agent Persistence: XDG Data Home Migration
 
 **Date:** 2025-05-23
-**Status:** Draft
+**Status:** Implemented
 
 ## Goal
 

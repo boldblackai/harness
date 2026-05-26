@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignore": ["bin/", "node_modules/", "opencode/", "pi/"]
+    "ignore": [
+      "bin/",
+      "node_modules/",
+      ".pnpm-store/",
+      ".harness/",
+      "opencode/",
+      "pi/",
+      ".pi-lens/"
+    ]
   },
   "linter": {
     "enabled": true,

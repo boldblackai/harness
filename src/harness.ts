@@ -18,6 +18,7 @@ interface Args extends ParsedArgs {
   // minimist --no- prefix: --no-verify / --no-skills set these to false; NOT in boolean[] to avoid double-negation
   verify?: boolean;
   ephemeral: boolean;
+  local: boolean;
   skills?: boolean;
   "env-file"?: string;
   e?: string;
@@ -65,7 +66,10 @@ class PiAdapter implements AgentAdapter {
   }
 
   persistMounts(): PersistMount[] {
-    return [{ hostSubpath: "", containerPath: "/home/harness/.pi/agent" }];
+    return [
+      { hostSubpath: "", containerPath: "/home/harness/.pi/agent" },
+      { hostSubpath: "npm", containerPath: "/home/harness/.local/share/npm" },
+    ];
   }
 }
 
@@ -108,13 +112,7 @@ class HermesAdapter implements AgentAdapter {
   }
 
   persistMounts(): PersistMount[] {
-    return [
-      { hostSubpath: "local", containerPath: "/home/harness/.hermes-local" },
-      {
-        hostSubpath: "openrouter",
-        containerPath: "/home/harness/.hermes-openrouter",
-      },
-    ];
+    return [{ hostSubpath: "", containerPath: "/home/harness/.hermes" }];
   }
 }
 
@@ -328,10 +326,15 @@ Options:
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
+  --local                Force local mode even with -e (use LM Studio / local defaults)
   -h, --help             Show this help message
 
 Environment variables:
   HARNESS_IMAGE_TAG      Override the Docker image tag (defaults to package version)
+  XDG_DATA_HOME         Override the base directory for persistence data (defaults to ~/.local/share)
+  XDG_CACHE_HOME        Override the base directory for cosign cache (defaults to ~/.cache)
+
+Persistence data is stored at $XDG_DATA_HOME/harness/<project>/<agent>/.
 
 You can also pipe text to harness as an implied -p:
   echo "write me a fizzbuzz in Go" | harness
@@ -342,13 +345,32 @@ const REGISTRY = "ghcr.io/capotej/harness";
 const VERSION: string = require("../package.json").version;
 const IMAGE_TAG = process.env.HARNESS_IMAGE_TAG ?? VERSION;
 
+function normalizeCwd(cwd: string): string {
+  const home = os.homedir();
+  let normalized = cwd;
+  if (normalized.startsWith(home)) {
+    normalized = normalized.slice(home.length);
+  }
+  normalized = normalized.replace(/\//g, "_");
+  if (normalized === "") {
+    normalized = "_home";
+  }
+  return normalized;
+}
+
+function xdgDataDir(): string {
+  return (
+    process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share")
+  );
+}
+
 function getImage(agent: string): string {
   const tag = agent === "pi" ? IMAGE_TAG : `${agent}-${IMAGE_TAG}`;
   return `${REGISTRY}:${tag}`;
 }
 
 const MINIMIST_OPTS = {
-  boolean: ["help", "h", "ephemeral"],
+  boolean: ["help", "h", "ephemeral", "local"],
   string: [
     "env-file",
     "e",
@@ -385,6 +407,7 @@ const argv = minimist<Args>(process.argv.slice(2), MINIMIST_OPTS);
     ...Object.values(MINIMIST_OPTS.alias),
     "verify", // --no-verify sets verify=false
     "skills", // --no-skills sets skills=false
+    "local",
   ]);
   const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
   if (unknown.length > 0) {
@@ -401,6 +424,7 @@ if (argv.help) {
 
 const noVerify = argv.verify === false;
 const noSkills = argv.skills === false;
+const localMode = argv.local;
 const envFilePath = argv["env-file"] || null;
 const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
@@ -470,6 +494,11 @@ async function run(prompt: string | null): Promise<void> {
     ? ["--env-file", path.resolve(envFilePath)]
     : [];
 
+  // Cloud mode: -e without --local signals entrypoints to skip local/defaults
+  // and let agents auto-detect providers from env vars in the file.
+  const cloudModeEnv =
+    envFilePath && !localMode ? ["-e", "HARNESS_CLOUD_MODE=1"] : [];
+
   const adapter = ADAPTERS[agentName];
   const adapterOptions = { prompt, model: modelArg, envFilePath };
   const containerCmd = adapter.buildCommand(adapterOptions);
@@ -486,13 +515,32 @@ async function run(prompt: string | null): Promise<void> {
   } else {
     volumeArgs = ["-v", `${workspace}:/workspace`];
     if (!effectiveEphemeral) {
-      const persistRoot = path.join(workspace, ".harness", agentName);
+      const persistRoot = path.join(
+        xdgDataDir(),
+        "harness",
+        normalizeCwd(workspace),
+        agentName,
+      );
+      // Deprecation warning for old .harness/ directory
+      const oldHarnessDir = path.join(workspace, ".harness");
+      if (fs.existsSync(oldHarnessDir)) {
+        console.error(
+          `harness: WARNING: found ${oldHarnessDir}/ — persistence data now lives at ${persistRoot}. To migrate session data, copy the contents of .harness/${agentName}/ to the new location. Otherwise this directory can be safely deleted.`,
+        );
+      }
       const mounts = adapter.persistMounts?.() ?? [];
       for (const mount of mounts) {
         const hostFullPath = path.join(persistRoot, mount.hostSubpath);
         fs.mkdirSync(hostFullPath, { recursive: true });
         volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
       }
+      // Per-agent mise persistence (data: tools/plugins, state: trust settings)
+      const miseDataPath = path.join(persistRoot, "mise");
+      fs.mkdirSync(miseDataPath, { recursive: true });
+      volumeArgs.push("-v", `${miseDataPath}:/home/harness/.local/share/mise`);
+      const miseStatePath = path.join(persistRoot, "mise-state");
+      fs.mkdirSync(miseStatePath, { recursive: true });
+      volumeArgs.push("-v", `${miseStatePath}:/home/harness/.local/state/mise`);
     }
   }
 
@@ -533,6 +581,7 @@ async function run(prompt: string | null): Promise<void> {
     "--security-opt",
     `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
+    ...cloudModeEnv,
     ...adapterDockerArgs,
     ...volumeArgs,
     ...userVolumeArgs,

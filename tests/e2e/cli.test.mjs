@@ -13,7 +13,7 @@
 // the cosign verification skip path (HARNESS_IMAGE_TAG and --no-verify).
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -74,6 +74,18 @@ function dockerArgs(stdout) {
   // Split safely: docker shim joined with spaces, but our test fixtures
   // never contain literal spaces inside individual args.
   return line.replace("DOCKER_INVOKED ", "").split(" ").filter(Boolean);
+}
+
+function normalizeCwd(cwd, home) {
+  let normalized = cwd;
+  if (normalized.startsWith(home)) {
+    normalized = normalized.slice(home.length);
+  }
+  normalized = normalized.replace(/\//g, "_");
+  if (normalized === "") {
+    normalized = "_home";
+  }
+  return normalized;
 }
 
 before(() => {
@@ -291,6 +303,8 @@ test("pi: interactive (no -p, no piped stdin) with --model emits 'pi --provider 
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
+        HOME: path.dirname(SHIM_DIR),
+        XDG_DATA_HOME: path.join(path.dirname(SHIM_DIR), ".local", "share"),
       },
       encoding: "utf8",
     },
@@ -379,8 +393,8 @@ test("opencode: --model is passed via OPENCODE_MODEL env, not CLI", () => {
 
 test("hermes: no -m, no -p emits exactly ['hermes','chat'] (no stray flags)", () => {
   // Covers the no-model + interactive branch of HermesAdapter.buildCommand:
-  //   args = ["hermes","chat"]; no -m pushed (model falsy); no -q pushed
-  //   (prompt === null when no -p and no piped stdin).
+  //   args = ["hermes","chat"]; no -m pushed (model falsy);
+  //   no -q pushed (prompt === null when no -p and no piped stdin).
   // Locks that future refactors don't accidentally inject defaults for
   // either flag in the no-args path.
   //
@@ -400,6 +414,8 @@ test("hermes: no -m, no -p emits exactly ['hermes','chat'] (no stray flags)", ()
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
+        HOME: path.dirname(SHIM_DIR),
+        XDG_DATA_HOME: path.join(path.dirname(SHIM_DIR), ".local", "share"),
       },
       encoding: "utf8",
     },
@@ -448,6 +464,64 @@ test("--env-file is passed to docker as --env-file <abs>", () => {
   assert.equal(a[i + 1], ENV_FILE); // resolved to abs path; ENV_FILE already abs
 });
 
+// ---- cloud/local mode (HARNESS_CLOUD_MODE) ---------------------------------
+
+test("-e without --local sets HARNESS_CLOUD_MODE=1 (cloud mode)", () => {
+  const r = runCli(["-e", ENV_FILE, "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  const idx = a.findIndex(
+    (v, i) => v === "-e" && a[i + 1] === "HARNESS_CLOUD_MODE=1",
+  );
+  assert.notEqual(idx, -1, `HARNESS_CLOUD_MODE=1 not found in: ${a.join(" ")}`);
+});
+
+test("no -e does NOT set HARNESS_CLOUD_MODE (local mode)", () => {
+  const r = runCli(["-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  const has = a.some(
+    (v, i) => v === "-e" && a[i + 1]?.startsWith("HARNESS_CLOUD_MODE"),
+  );
+  assert.ok(
+    !has,
+    `HARNESS_CLOUD_MODE should not be set without -e: ${a.join(" ")}`,
+  );
+});
+
+test("-e with --local does NOT set HARNESS_CLOUD_MODE (forced local)", () => {
+  const r = runCli(["-e", ENV_FILE, "--local", "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  // --env-file should still be present
+  assert.notEqual(a.indexOf("--env-file"), -1);
+  const has = a.some(
+    (v, i) => v === "-e" && a[i + 1]?.startsWith("HARNESS_CLOUD_MODE"),
+  );
+  assert.ok(
+    !has,
+    `HARNESS_CLOUD_MODE should not be set with --local: ${a.join(" ")}`,
+  );
+});
+
+test("cloud mode works for all agents (pi, opencode, hermes)", () => {
+  for (const agent of ["pi", "opencode", "hermes"]) {
+    const r = runCli(["-a", agent, "-e", ENV_FILE, "-p", "noop"]);
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    const has = a.some(
+      (v, i) => v === "-e" && a[i + 1] === "HARNESS_CLOUD_MODE=1",
+    );
+    assert.ok(has, `${agent}: HARNESS_CLOUD_MODE=1 expected: ${a.join(" ")}`);
+  }
+});
+
+test("--help documents --local flag", () => {
+  const r = spawnSync("node", [CLI, "--help"], { encoding: "utf8" });
+  assert.match(r.stdout, /--local/);
+  assert.match(r.stdout, /local mode/i);
+});
+
 // ---- file mount vs cwd mount -----------------------------------------------
 
 test("--file mounts only the file at /workspace/<basename>", () => {
@@ -493,12 +567,17 @@ test("docker invocation always includes hardening flags", () => {
 
 test("one-shot run (-p) is implicitly ephemeral: no .harness/ dir created", () => {
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync("node", [CLI, "-p", "noop"], {
     cwd: localWork,
     env: {
       ...process.env,
       PATH: `${SHIM_DIR}:${process.env.PATH}`,
       HARNESS_IMAGE_TAG: "test-tag",
+      HOME: homeDir,
+      XDG_DATA_HOME: xdgData,
     },
     encoding: "utf8",
   });
@@ -508,22 +587,37 @@ test("one-shot run (-p) is implicitly ephemeral: no .harness/ dir created", () =
     false,
     ".harness/ should NOT be created for one-shot runs",
   );
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness")),
+    false,
+    "XDG persist dir should NOT be created for one-shot runs",
+  );
 });
 
 test("piped stdin is implicitly ephemeral and forwards prompt", () => {
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync("node", [CLI], {
     cwd: localWork,
     env: {
       ...process.env,
       PATH: `${SHIM_DIR}:${process.env.PATH}`,
       HARNESS_IMAGE_TAG: "test-tag",
+      HOME: homeDir,
+      XDG_DATA_HOME: xdgData,
     },
     input: "piped prompt\n",
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(fs.existsSync(path.join(localWork, ".harness")), false);
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness")),
+    false,
+    "XDG persist dir should NOT be created for piped stdin",
+  );
   const a = dockerArgs(r.stdout);
   // pi adapter receives the piped prompt via -p
   const idx = a.indexOf("pi");
@@ -532,12 +626,12 @@ test("piped stdin is implicitly ephemeral and forwards prompt", () => {
   assert.match(a[idx + 2], /piped/);
 });
 
-test("interactive (PTY, no -p, no --ephemeral) creates .harness/<agent>/ persistence dir", () => {
+test("interactive (PTY) creates persistence dir at XDG_DATA_HOME/harness/<normalized>/<agent>/", () => {
   // Inverse of the two implicit-ephemeral cases above: when the user is
   // truly interactive (TTY, no -p, no piped stdin) and does NOT pass
   // --ephemeral, the run() path must materialize the persistence dirs the
-  // adapter advertises via persistMounts(). For the pi adapter that is
-  // `<cwd>/.harness/pi/` (empty hostSubpath -> persistRoot itself).
+  // adapter advertises via persistMounts(). For the pi adapter the persist
+  // root is `$XDG_DATA_HOME/harness/<normalized-cwd>/pi/`.
   //
   // This locks the boundary so a future refactor can't accidentally drop
   // the fs.mkdirSync() call or invert the `effectiveEphemeral` flag.
@@ -552,20 +646,32 @@ test("interactive (PTY, no -p, no --ephemeral) creates .harness/<agent>/ persist
     return;
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
     cwd: localWork,
     env: {
       ...process.env,
       PATH: `${SHIM_DIR}:${process.env.PATH}`,
       HARNESS_IMAGE_TAG: "test-tag",
+      HOME: homeDir,
+      XDG_DATA_HOME: xdgData,
     },
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
+  const nCwd = normalizeCwd(localWork, homeDir);
   assert.equal(
-    fs.existsSync(path.join(localWork, ".harness", "pi")),
+    fs.existsSync(path.join(xdgData, "harness", nCwd, "pi")),
     true,
-    ".harness/pi/ should be created in interactive mode without --ephemeral",
+    `XDG_DATA_HOME/harness/${nCwd}/pi/ should be created in interactive mode without --ephemeral`,
+  );
+  // .harness/ must NOT be created in CWD
+  assert.equal(
+    fs.existsSync(path.join(localWork, ".harness")),
+    false,
+    ".harness/ must NOT be created in CWD (XDG migration)",
   );
   // And the docker args must include a -v mount targeting /home/harness/.pi/agent.
   const cleaned = r.stdout.replace(/\r/g, "");
@@ -582,7 +688,7 @@ test("interactive (PTY, no -p, no --ephemeral) creates .harness/<agent>/ persist
 test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount", () => {
   // Inverse of the interactive-PTY persistence test: when the user is in a
   // real PTY (TTY, no -p, no piped stdin) but EXPLICITLY passes --ephemeral,
-  // the run() path must NOT create .harness/<agent>/ and must NOT include
+  // the run() path must NOT create persistence dirs and must NOT include
   // the adapter's persistMounts() in the docker args.
   //
   // This locks the precedence of the --ephemeral flag in
@@ -596,6 +702,9 @@ test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount"
     return; // platforms without `script` (rare; ubuntu-latest has it).
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync(
     "script",
     ["-qfec", `node ${CLI} --ephemeral`, "/dev/null"],
@@ -605,6 +714,8 @@ test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount"
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
+        HOME: homeDir,
+        XDG_DATA_HOME: xdgData,
       },
       encoding: "utf8",
     },
@@ -614,6 +725,11 @@ test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount"
     fs.existsSync(path.join(localWork, ".harness")),
     false,
     ".harness/ must NOT be created when --ephemeral is passed in interactive mode",
+  );
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness")),
+    false,
+    "XDG persist dir must NOT be created when --ephemeral is passed",
   );
   const cleaned = r.stdout.replace(/\r/g, "");
   const a = dockerArgs(cleaned);
@@ -641,12 +757,17 @@ test("piped whitespace-only stdin takes no-prompt branch (pi has no -p)", () => 
   // This guards against a regression where `input` (raw, untrimmed) gets
   // passed through and the adapter receives `-p "   \n"` instead.
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync("node", [CLI], {
     cwd: localWork,
     env: {
       ...process.env,
       PATH: `${SHIM_DIR}:${process.env.PATH}`,
       HARNESS_IMAGE_TAG: "test-tag",
+      HOME: homeDir,
+      XDG_DATA_HOME: xdgData,
     },
     input: "   \n\t  \n",
     encoding: "utf8",
@@ -656,6 +777,11 @@ test("piped whitespace-only stdin takes no-prompt branch (pi has no -p)", () => 
     fs.existsSync(path.join(localWork, ".harness")),
     false,
     "piped stdin is implicitly ephemeral; .harness/ must NOT be created",
+  );
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness")),
+    false,
+    "XDG persist dir must NOT be created for piped whitespace stdin",
   );
   const a = dockerArgs(r.stdout);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${r.stdout}`);
@@ -686,6 +812,9 @@ test("opencode interactive (no --ephemeral) creates all three persistence dirs a
     return; // skip on platforms without `script`.
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync(
     "script",
     ["-qfec", `node ${CLI} -a opencode`, "/dev/null"],
@@ -695,18 +824,21 @@ test("opencode interactive (no --ephemeral) creates all three persistence dirs a
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
+        HOME: homeDir,
+        XDG_DATA_HOME: xdgData,
       },
       encoding: "utf8",
     },
   );
   assert.equal(r.status, 0, r.stderr);
 
-  // All three host-side persistence buckets must be created.
+  // All three host-side persistence buckets must be created under XDG.
+  const nCwd = normalizeCwd(localWork, homeDir);
   for (const sub of ["config", "share", "state"]) {
     assert.equal(
-      fs.existsSync(path.join(localWork, ".harness", "opencode", sub)),
+      fs.existsSync(path.join(xdgData, "harness", nCwd, "opencode", sub)),
       true,
-      `.harness/opencode/${sub}/ should be created in interactive mode`,
+      `XDG_DATA_HOME/harness/${nCwd}/opencode/${sub}/ should be created in interactive mode`,
     );
   }
 
@@ -1000,7 +1132,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
 
 test("--volumes is forwarded alongside interactive persistence mounts", () => {
   // In interactive (PTY, no -p, no --ephemeral) mode the CLI creates the
-  // .harness/<agent>/ persistence directory and adds its mount(s) to docker
+  // persistence directory under XDG_DATA_HOME and adds its mount(s) to docker
   // args. Lock down here that user-supplied --volumes are appended AFTER the
   // persist mounts and BOTH land in the final docker invocation so a future
   // refactor cannot accidentally drop one path when the other is in play.
@@ -1011,6 +1143,9 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
     return; // skip on platforms without `script`.
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const extraDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "harness-vol-persist-"),
   );
@@ -1024,17 +1159,20 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
           ...process.env,
           PATH: `${SHIM_DIR}:${process.env.PATH}`,
           HARNESS_IMAGE_TAG: "test-tag",
+          HOME: homeDir,
+          XDG_DATA_HOME: xdgData,
         },
         encoding: "utf8",
       },
     );
     assert.equal(r.status, 0, r.stderr);
 
-    // interactive non-ephemeral path created the persist dir
+    // interactive non-ephemeral path created the persist dir under XDG
+    const nCwd = normalizeCwd(localWork, homeDir);
     assert.equal(
-      fs.existsSync(path.join(localWork, ".harness", "pi")),
+      fs.existsSync(path.join(xdgData, "harness", nCwd, "pi")),
       true,
-      ".harness/pi/ should be created in interactive mode",
+      `XDG_DATA_HOME/harness/${nCwd}/pi/ should be created in interactive mode`,
     );
 
     const cleaned = r.stdout.replace(/\r/g, "");
@@ -1436,15 +1574,11 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
   }
 });
 
-test("hermes interactive (no --ephemeral) creates both persistence dirs and mounts", () => {
-  // HermesAdapter.persistMounts() returns two distinct mounts:
-  //   - local      -> /home/harness/.hermes-local
-  //   - openrouter -> /home/harness/.hermes-openrouter
+test("hermes interactive (no --ephemeral) creates persistence dir and mounts", () => {
+  // HermesAdapter.persistMounts() returns a single mount:
+  //   '' -> /home/harness/.hermes
   //
-  // The pi adapter test only locks a single empty-hostSubpath mount and
-  // PR #30 (mine, merged) locks the opencode 3-mount shape. This is the
-  // analog test for hermes\'s 2-mount shape so a future refactor cannot
-  // silently drop one of the two hermes persistence buckets.
+  // The empty hostSubpath means the persist root itself is mounted directly.
   const which = spawnSync("sh", ["-c", "command -v script"], {
     encoding: "utf8",
   });
@@ -1452,6 +1586,9 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
     return; // skip on platforms without `script`.
   }
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
   const r = spawnSync(
     "script",
     ["-qfec", `node ${CLI} -a hermes`, "/dev/null"],
@@ -1461,35 +1598,30 @@ test("hermes interactive (no --ephemeral) creates both persistence dirs and moun
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
+        HOME: homeDir,
+        XDG_DATA_HOME: xdgData,
       },
       encoding: "utf8",
     },
   );
   assert.equal(r.status, 0, r.stderr);
 
-  // Both host-side persistence buckets must be created.
-  for (const sub of ["local", "openrouter"]) {
-    assert.equal(
-      fs.existsSync(path.join(localWork, ".harness", "hermes", sub)),
-      true,
-      `.harness/hermes/${sub}/ should be created in interactive mode`,
-    );
-  }
+  // Host-side persistence dir must be created under XDG.
+  const nCwd = normalizeCwd(localWork, homeDir);
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness", nCwd, "hermes")),
+    true,
+    `XDG_DATA_HOME/harness/${nCwd}/hermes/ should be created in interactive mode`,
+  );
 
-  // Both docker -v mounts must target the documented container paths.
+  // Docker -v mount must target the default hermes home.
   const cleaned = r.stdout.replace(/\r/g, "");
   const a = dockerArgs(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
-  const targets = [
-    "/home/harness/.hermes-local",
-    "/home/harness/.hermes-openrouter",
-  ];
-  for (const t of targets) {
-    assert.ok(
-      a.some((arg) => arg.endsWith(`:${t}`)),
-      `expected -v mount ending in :${t} in: ${a.join(" ")}`,
-    );
-  }
+  assert.ok(
+    a.some((arg) => arg.endsWith(":/home/harness/.hermes")),
+    `expected -v mount ending in :/home/harness/.hermes in: ${a.join(" ")}`,
+  );
 });
 
 test("--volumes is forwarded alongside --file mode (both mounts present)", () => {
@@ -1715,7 +1847,8 @@ test("--agent=hermes (equals form) selects the agent", () => {
   const idx = a.indexOf("hermes");
   assert.notEqual(idx, -1, `expected 'hermes' in: ${a.join(" ")}`);
   // hermes adapter shape: hermes chat -q <prompt>
-  assert.deepEqual(a.slice(idx, idx + 2), ["hermes", "chat"]);
+  assert.deepEqual(a.slice(idx, idx + 3), ["hermes", "chat", "-q"]);
+  assert.equal(a[idx + 3], "noop");
 });
 
 test("opencode: prompt is forwarded as `opencode run <prompt>`", () => {
@@ -1849,4 +1982,361 @@ test("--volumes with multi-colon options preserves the full option suffix", () =
   } finally {
     fs.rmSync(extraDir, { recursive: true, force: true });
   }
+});
+
+// ---- CWD normalization (XDG persistence) ----------------------------------
+
+test("normalizeCwd: CWD under home strips prefix, replaces / with _", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-norm-"));
+  const homeDir = path.join(tmp, "home");
+  const projectDir = path.join(homeDir, "projects", "foo");
+  fs.mkdirSync(projectDir, { recursive: true });
+  const xdgData = path.join(tmp, "xdg-data");
+  fs.mkdirSync(xdgData, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: projectDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: homeDir,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(
+      fs.existsSync(path.join(xdgData, "harness", "_projects_foo", "pi")),
+      true,
+      "persist dir should be at XDG_DATA_HOME/harness/_projects_foo/pi/",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("normalizeCwd: CWD is exactly home dir → uses _home", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-norm-home-"));
+  const homeDir = path.join(tmp, "myhome");
+  fs.mkdirSync(homeDir, { recursive: true });
+  const xdgData = path.join(tmp, "xdg-data");
+  fs.mkdirSync(xdgData, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: homeDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: homeDir,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(
+      fs.existsSync(path.join(xdgData, "harness", "_home", "pi")),
+      true,
+      "persist dir should be at XDG_DATA_HOME/harness/_home/pi/",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("normalizeCwd: CWD not under home keeps full path with slashes replaced", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-norm-abs-"));
+  const sandboxDir = path.join(tmp, "tmp", "sandbox");
+  fs.mkdirSync(sandboxDir, { recursive: true });
+  const xdgData = path.join(tmp, "xdg-data");
+  fs.mkdirSync(xdgData, { recursive: true });
+  const fakeHome = path.join(tmp, "home");
+  fs.mkdirSync(fakeHome, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: sandboxDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: fakeHome,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(
+      fs.existsSync(path.join(xdgData, "harness")),
+      true,
+      "harness root should exist in XDG_DATA_HOME",
+    );
+    assert.equal(
+      fs.existsSync(path.join(sandboxDir, ".harness")),
+      false,
+      ".harness/ must NOT be created in CWD",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---- Mise mount tests ------------------------------------------------------
+
+test("interactive mode creates mise dir and mounts it at /home/harness/.local/share/mise", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-mise-"));
+  const xdgData = path.join(tmp, "xdg-data");
+  const workDir = path.join(tmp, "work");
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.mkdirSync(xdgData, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: tmp,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    // Verify mise data dir on host
+    const nCwd = normalizeCwd(workDir, tmp);
+    const miseDir = path.join(xdgData, "harness", nCwd, "pi", "mise");
+    assert.equal(
+      fs.existsSync(miseDir),
+      true,
+      `mise dir should exist at ${miseDir}`,
+    );
+    // Verify mise state dir on host
+    const miseStateDir = path.join(
+      xdgData,
+      "harness",
+      nCwd,
+      "pi",
+      "mise-state",
+    );
+    assert.equal(
+      fs.existsSync(miseStateDir),
+      true,
+      `mise-state dir should exist at ${miseStateDir}`,
+    );
+    // Verify docker mounts
+    const cleaned = r.stdout.replace(/\r/g, "");
+    const a = dockerArgs(cleaned);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
+      `expected mise data volume mount in: ${a.join(" ")}`,
+    );
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/state/mise")),
+      `expected mise state volume mount in: ${a.join(" ")}`,
+    );
+    // Verify npm dir on host
+    const npmDir = path.join(xdgData, "harness", nCwd, "pi", "npm");
+    assert.equal(
+      fs.existsSync(npmDir),
+      true,
+      `npm dir should exist at ${npmDir}`,
+    );
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/share/npm")),
+      `expected npm volume mount in: ${a.join(" ")}`,
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("ephemeral mode (-p) does NOT create mise dir or mount", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-mise-eph-"));
+  const xdgData = path.join(tmp, "xdg-data");
+  const workDir = path.join(tmp, "work");
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.mkdirSync(xdgData, { recursive: true });
+  try {
+    const r = spawnSync("node", [CLI, "-p", "noop"], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: tmp,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(
+      fs.existsSync(path.join(xdgData, "harness")),
+      false,
+      "no persist dirs should exist in ephemeral mode",
+    );
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.equal(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
+      false,
+      "ephemeral mode must not mount mise data",
+    );
+    assert.equal(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/state/mise")),
+      false,
+      "ephemeral mode must not mount mise state",
+    );
+    assert.equal(
+      a.some((arg) => arg.endsWith(":/home/harness/.local/share/npm")),
+      false,
+      "ephemeral mode must not mount npm",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---- XDG_DATA_HOME override test -------------------------------------------
+
+test("XDG_DATA_HOME override: persist dirs created at custom location", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-xdg-"));
+  const customXdg = path.join(tmp, "custom-xdg");
+  const workDir = path.join(tmp, "work");
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.mkdirSync(customXdg, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: tmp,
+        XDG_DATA_HOME: customXdg,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(
+      fs.existsSync(path.join(customXdg, "harness")),
+      true,
+      "harness root should exist under custom XDG_DATA_HOME",
+    );
+    const defaultXdg = path.join(tmp, ".local", "share");
+    assert.equal(
+      fs.existsSync(path.join(defaultXdg, "harness")),
+      false,
+      "no persist dir should exist under default ~/.local/share",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---- No-.harness/ and deprecation tests ------------------------------------
+
+test("no .harness/ directory is ever created in the CWD (XDG migration)", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-no-dot-"));
+  const workDir = path.join(tmp, "work");
+  fs.mkdirSync(workDir, { recursive: true });
+  const xdgData = path.join(tmp, "xdg-data");
+  fs.mkdirSync(xdgData, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: tmp,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(
+      fs.existsSync(path.join(workDir, ".harness")),
+      false,
+      ".harness/ must NEVER be created in the CWD",
+    );
+    assert.equal(
+      fs.existsSync(path.join(xdgData, "harness")),
+      true,
+      "persist data should exist under XDG_DATA_HOME",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("deprecation warning fires when old .harness/ directory exists in CWD", () => {
+  const which = spawnSync("sh", ["-c", "command -v script"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-deprecat-"));
+  const workDir = path.join(tmp, "work");
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.mkdirSync(path.join(workDir, ".harness", "pi"), { recursive: true });
+  const xdgData = path.join(tmp, "xdg-data");
+  fs.mkdirSync(xdgData, { recursive: true });
+  try {
+    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: tmp,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    // When using script (PTY), stderr is merged into stdout
+    const combined = r.stdout + r.stderr;
+    assert.match(
+      combined,
+      /found.*\.harness.*persistence data now lives at/,
+      "should emit deprecation warning about old .harness/ directory",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---- --help XDG documentation test -----------------------------------------
+
+test("--help documents XDG_DATA_HOME and XDG_CACHE_HOME environment variables", () => {
+  const r = runCli(["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /XDG_DATA_HOME/);
+  assert.match(r.stdout, /XDG_CACHE_HOME/);
+  assert.match(r.stdout, /Environment variables:[\s\S]*XDG_DATA_HOME/);
+  assert.match(r.stdout, /\$XDG_DATA_HOME\/harness/);
 });

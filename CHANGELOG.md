@@ -1,5 +1,77 @@
 # Changelog
 
+## [1.8.1] - 2026-05-25
+
+### Summary
+
+Introduces cloud/local mode (`HARNESS_CLOUD_MODE`) — passing `--env-file` now automatically switches agents to cloud mode where they auto-detect providers from API keys in the file, instead of hardcoding OpenRouter. Use `--local` to force local mode even with `--env-file` (e.g. `harness -e .env --local -p "..."`). Simplifies hermes persistence to a single directory and scopes npm persistence to the pi adapter. Adds multi-provider configs for opencode (Anthropic, Google, OpenAI, ZAI).
+
+### Changes
+
+- 967f1c2 scope mount to pi adapter, biome fixes for pi-lens (#79)
+- e1ace6c stop hardcoding openrouter, start multi provider support (#78)
+
+## [1.8.0] - 2026-05-24
+
+### Summary
+
+Migrates persistence to XDG data directories with per-agent `mise` support — interactive runs now store agent state, tool data, and trust settings under `$XDG_DATA_HOME/harness/<project>/<agent>/`. Ensures `npm install -g` works correctly for the harness user by configuring a non-root prefix. Bumps all three agent dependencies: pi 0.71.1 → 0.73.1, opencode 1.14.31 → 1.15.10, and hermes v2026.5.7 → v2026.5.16 (major v0.14.0 "Foundation" release).
+
+### Dependency Updates
+- updated `debian:stable-slim` base image digest
+- updated `@mariozechner/pi-coding-agent` from 0.71.1 to 0.73.1
+- updated `opencode-ai` from 1.14.31 to 1.15.10
+- updated `uv` from 0.11.8 to 0.11.16
+- updated `hermes-agent` from v2026.5.7 to v2026.5.16
+- updated `python-telegram-bot` from 22.7 to 22.6
+- removed `croniter` from hermes image
+
+### Upstream Release Notes
+
+#### @mariozechner/pi-coding-agent 0.71.1 → 0.73.1
+
+**v0.72.0** — **Breaking:** replaced `compat.reasoningEffortMap` with model-level `thinkingLevelMap`. Added Xiaomi MiMo Token Plan provider (`XIAOMI_API_KEY`), custom provider base URL overrides via `pi.registerProvider()`, and post-turn stop callback (`shouldStopAfterTurn`). Fixed self-update detection.
+
+**v0.73.0** — **Breaking:** switched built-in `xiaomi` provider from Token Plan AMS to API billing endpoint; Token Plan users should switch to `xiaomi-token-plan-{cn,ams,sgp}`. Added incremental bash output streaming (output appears while commands run) and compact `read` rendering. Fixed OpenAI Codex WebSocket transport fallback and session lifecycle, Bedrock Claude Opus 4.7 `xhigh` thinking, and Qwen 3.5/3.6 model metadata.
+
+**v0.73.1** — Added self-update support for the upcoming npm scope migration (`@mariozechner` → `@earendil-works`), interactive OAuth login selection for providers, and JSONC-style `models.json` parsing (comments and trailing commas). Fixed `pi -p` treating YAML frontmatter prompts as flags, `/copy` on Wayland compositors, HTML session exports stripping skill wrapper XML, and Codex OAuth refresh errors.
+
+#### opencode-ai 1.14.31 → 1.15.10
+
+**v1.14.32–v1.14.35** — Shell mode prompt editing restored; PTY connection tickets for authenticated terminal websockets; v2 session failure events; improved shell command handling (Bash/PowerShell/cmd); many HTTP API fixes (structured errors, CORS, pagination, basic auth); diff patch boundary preservation fix.
+
+**v1.14.37** — Canceling a task now cancels child subtask sessions; improved v2 session rendering; added session warping to another workspace.
+
+**v1.14.38–v1.14.40** — Desktop trusts system CA certs and `HTTP_PROXY` env vars; support for `.well-known/opencode` remote config files; fixed Cloudflare AI Gateway, Mistral Medium 3.5 variants, and server-overload auto-retries.
+
+**v1.14.41–v1.14.42** — **Added Scout agent** for repo research/docs/dependency inspection; added workspace sync and interactive split-footer mode for `opencode run`; session warping carries uncommitted file changes; moved desktop local server to separate utility process.
+
+**v1.14.43–v1.14.45** — Fixed provider API responses with non-JSON auth loader; included tool image attachments in ACP updates; fixed read tool permissions for worktree-relative paths; SDK `throwOnError` throws real `Error` with server message.
+
+**v1.14.46** — Added built-in `customize-opencode` skill; **fixed Plan Mode security bypass** where subagents could ignore parent deny rules; fixed MCP tool discovery with broken `outputSchema`.
+
+**v1.14.47–v1.14.48** — Restored TUI prompt editing keybindings; model changes persist across sessions; Scout materializes configured reference repos; image attachments preserved as-is (reverted auto-resizing).
+
+**v1.14.49** — **Major:** Added v2 model/provider listing API; DigitalOcean OAuth + Inference Router support; auto-creates `opencode.jsonc` with full schema; `@mentions` autocomplete in prompts; pinned recent sessions + quick slots in TUI.
+
+**v1.14.50–v1.14.51** — **Added experimental background subagents** for concurrent task execution; fixed HTTP event streams closing after initial connect; restored markdown rendering for session output; LiteLLM now requires v1.85.0-rc.2+.
+
+**v1.15.0** — Added Effect-based core event system for more complete event delivery; fixed versioned event projector lookups; desktop auto-hides menu bar on Linux/Windows.
+
+**v1.15.1** — Added collapsed thinking view (expandable inline); pinned sessions with quick-switch slots; fixed npm native binary recovery; fixed multiline `@` mentions; preserved custom tool Zod schema metadata.
+
+**v1.15.10** — Restored legacy production desktop flows for opening projects and starting sessions.
+
+#### hermes-agent v2026.5.7 → v2026.5.16
+
+**v2026.5.16** — Major v0.14.0 "Foundation" release: xAI Grok via SuperGrok OAuth with grok-4.3 at 1M context window; OpenAI-compatible local proxy (`hermes proxy`) turns any OAuth provider into an endpoint for Codex/Aider/Cline/Continue; `x_search` first-class X (Twitter) search tool; Microsoft Teams end-to-end; massive debloating wave (heavy backends lazy-install on first use, `pip install hermes-agent` works from PyPI); cross-session 1-hour Claude prompt caching; 180x faster `browser_console` evaluations; ~19 seconds off cold-start launch; two new messaging platforms (LINE + SimpleX Chat, total 22); `/handoff` live session transfer; native button UI for `clarify` on Telegram/Discord; Discord channel history backfill; LSP semantic diagnostics on every write; unified pluggable `video_generate`; `computer_use` cua-driver backend for non-Anthropic models; native Windows beta; 808 commits, 633 merged PRs, 12 P0 + 50 P1 closures.
+
+### Changes
+- 1bd5625 update dependencies
+- 912cf73 npm install -g (used by pi install) is now owned by harness (#74)
+- 15f8a1d feat: XDG persistence migration with per-agent mise support (#73)
+- 4ed42cb XDG data home agent persistence migration (#72)
+
 ## [1.7.0] - 2026-05-16
 
 ### Summary
