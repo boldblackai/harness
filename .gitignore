@@ -2,4 +2,5 @@ node_modules/
 bin/
 .harness
 coverage/
+tmp/
 .pi-lens/

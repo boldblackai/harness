@@ -251,10 +251,11 @@ If an old `.harness/` directory exists in your working directory, harness will e
 
 ## Deploying hermes as a claw
 
-You can run `hermes` as a long-running "claw" — a persistent agent process reachable over a messaging gateway (e.g. Telegram). Two deployment targets are documented:
+You can run `hermes` as a long-running "claw" — a persistent agent process reachable over a messaging gateway (e.g. Telegram). Three deployment targets are documented:
 
 - [fly.io](docs/deploying-to-fly.md)
 - [Kubernetes](docs/deploying-to-k8s.md)
+- [AWS (ECS Fargate or EC2 + SSM)](docs/deploying-to-aws.md)
 
 ## Developing
 

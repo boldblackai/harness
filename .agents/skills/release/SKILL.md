@@ -120,16 +120,21 @@ Omit `### Dependency Updates` and `### Upstream Release Notes` entirely if there
 
 Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits automatically and would interfere with the jj workflow.
 
-## Step 5b: Update hermes image tag in README.md
+## Step 5b: Update hermes image tag in deploy guides
 
-The fly.toml example in `README.md` contains a pinned hermes image tag (e.g. `ghcr.io/capotej/harness:hermes-1.4.4`). Update it to the new version:
+The hermes claw deploy guides pin the upstream image tag (e.g. `ghcr.io/capotej/harness:hermes-1.8.1`). Update every occurrence to match the new `package.json` version. Each guide exists twice — the in-repo copy (`docs/deploying-to-*.md`, linked from README) and the docs-site copy (`docs/deploying/*.md`) — keep both in sync.
 
 ```toml
 image = "ghcr.io/capotej/harness:hermes-<new-version>"
-
 ```
 
-Search for the pattern `hermes-[0-9]` in `README.md` and replace all occurrences with the new version.
+Search for the pattern `hermes-[0-9]` in these files and replace all occurrences with the new version:
+
+- `docs/deploying-to-fly.md` and `docs/deploying/fly.md`
+- `docs/deploying-to-k8s.md` and `docs/deploying/k8s.md`
+- `docs/deploying-to-aws.md` and `docs/deploying/aws.md`
+
+Do not edit `README.md` — it only links to the guides.
 
 ## Step 6: Build
 
