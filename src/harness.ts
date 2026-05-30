@@ -15,11 +15,12 @@ const SECCOMP_PROFILE = path.join(
 interface Args extends ParsedArgs {
   help: boolean;
   h: boolean;
-  // minimist --no- prefix: --no-verify / --no-skills set these to false; NOT in boolean[] to avoid double-negation
+  // minimist --no- prefix: --no-verify / --no-skills / --no-agents-md set these to false; NOT in boolean[] to avoid double-negation
   verify?: boolean;
   ephemeral: boolean;
   local: boolean;
   skills?: boolean;
+  "agents-md"?: boolean;
   "env-file"?: string;
   e?: string;
   file?: string;
@@ -48,6 +49,9 @@ interface AgentAdapter {
   buildCommand(options: AgentOptions): string[];
   extraDockerArgs?(options: AgentOptions): string[];
   persistMounts?(): PersistMount[];
+  // Container path where this agent loads a global AGENTS.md context file.
+  // The host's ~/.agents/AGENTS.md is bind-mounted here when present.
+  agentsMdTarget?(): string;
 }
 
 class PiAdapter implements AgentAdapter {
@@ -70,6 +74,10 @@ class PiAdapter implements AgentAdapter {
       { hostSubpath: "", containerPath: "/home/harness/.pi/agent" },
       { hostSubpath: "npm", containerPath: "/home/harness/.local/share/npm" },
     ];
+  }
+
+  agentsMdTarget(): string {
+    return "/home/harness/.pi/agent/AGENTS.md";
   }
 }
 
@@ -101,6 +109,10 @@ class OpenCodeAdapter implements AgentAdapter {
       },
     ];
   }
+
+  agentsMdTarget(): string {
+    return "/home/harness/.config/opencode/AGENTS.md";
+  }
 }
 
 class HermesAdapter implements AgentAdapter {
@@ -113,6 +125,10 @@ class HermesAdapter implements AgentAdapter {
 
   persistMounts(): PersistMount[] {
     return [{ hostSubpath: "", containerPath: "/home/harness/.hermes" }];
+  }
+
+  agentsMdTarget(): string {
+    return "/home/harness/.hermes/AGENTS.md";
   }
 }
 
@@ -325,6 +341,7 @@ Options:
   -v, --volumes <spec>   Additional volume mount (host:container[:opts]); may be repeated
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
+  --no-agents-md         Disable mounting global ~/.agents/AGENTS.md into the agent context path
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
   --local                Force local mode even with -e (use LM Studio / local defaults)
   -h, --help             Show this help message
@@ -407,6 +424,7 @@ const argv = minimist<Args>(process.argv.slice(2), MINIMIST_OPTS);
     ...Object.values(MINIMIST_OPTS.alias),
     "verify", // --no-verify sets verify=false
     "skills", // --no-skills sets skills=false
+    "agents-md", // --no-agents-md sets agents-md=false
     "local",
   ]);
   const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
@@ -424,6 +442,7 @@ if (argv.help) {
 
 const noVerify = argv.verify === false;
 const noSkills = argv.skills === false;
+const noAgentsMd = argv["agents-md"] === false;
 const localMode = argv.local;
 const envFilePath = argv["env-file"] || null;
 const fileArg = argv.file || null;
@@ -559,6 +578,21 @@ async function run(prompt: string | null): Promise<void> {
       if (fs.existsSync(sd.host) && fs.statSync(sd.host).isDirectory()) {
         volumeArgs.push("-v", `${sd.host}:${sd.container}`);
       }
+    }
+  }
+
+  // Mount the user's global ~/.agents/AGENTS.md into the adapter's expected
+  // context path so cross-agent rules apply inside the container. Skipped when
+  // the source file is absent (like skills dirs) or --no-agents-md is passed.
+  if (!noAgentsMd) {
+    const agentsMdHost = path.resolve(os.homedir(), ".agents", "AGENTS.md");
+    const agentsMdTarget = adapter.agentsMdTarget?.();
+    if (
+      agentsMdTarget &&
+      fs.existsSync(agentsMdHost) &&
+      fs.statSync(agentsMdHost).isFile()
+    ) {
+      volumeArgs.push("-v", `${agentsMdHost}:${agentsMdTarget}`);
     }
   }
 

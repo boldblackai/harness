@@ -2340,3 +2340,137 @@ test("--help documents XDG_DATA_HOME and XDG_CACHE_HOME environment variables", 
   assert.match(r.stdout, /Environment variables:[\s\S]*XDG_DATA_HOME/);
   assert.match(r.stdout, /\$XDG_DATA_HOME\/harness/);
 });
+
+// ---- global AGENTS.md mounting (issue #85) ---------------------------------
+//
+// A single host ~/.agents/AGENTS.md is bind-mounted into each agent's expected
+// context path. Reuses makeSkillsHome() for an isolated temp HOME.
+
+function writeAgentsMd(home) {
+  fs.mkdirSync(path.join(home, ".agents"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".agents", "AGENTS.md"), "# global rules\n");
+}
+
+test("global ~/.agents/AGENTS.md is mounted to the pi context path", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  try {
+    const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/AGENTS.md")),
+      `expected AGENTS.md mount at pi path in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("global ~/.agents/AGENTS.md is mounted to the opencode context path", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  try {
+    const r = runCli(["-a", "opencode", "-p", "noop"], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) =>
+        arg.endsWith(":/home/harness/.config/opencode/AGENTS.md"),
+      ),
+      `expected AGENTS.md mount at opencode path in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("global ~/.agents/AGENTS.md is mounted to the hermes context path", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  try {
+    const r = runCli(["-a", "hermes", "-p", "noop"], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.hermes/AGENTS.md")),
+      `expected AGENTS.md mount at hermes path in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("--no-agents-md suppresses the global AGENTS.md mount", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  try {
+    const r = runCli(["--no-agents-md", "-p", "noop"], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.equal(
+      a.some((arg) => arg.includes("/AGENTS.md")),
+      false,
+      `--no-agents-md must not mount AGENTS.md: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("non-existent ~/.agents/AGENTS.md is silently skipped", () => {
+  // Empty temp HOME — no AGENTS.md exists, so the mount is skipped.
+  const { home, cleanup } = makeSkillsHome();
+  try {
+    const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.equal(
+      a.some((arg) => arg.includes("/AGENTS.md")),
+      false,
+      `non-existent AGENTS.md must not be mounted: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("global AGENTS.md mount works with --file mode", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  try {
+    const r = runCli(["--file", SAMPLE_FILE, "-p", "noop"], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/workspace/script.py")),
+      `expected file mount in: ${a.join(" ")}`,
+    );
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/AGENTS.md")),
+      `expected AGENTS.md mount in --file mode: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("--help documents --no-agents-md", () => {
+  const r = runCli(["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /--no-agents-md/);
+});
