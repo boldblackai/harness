@@ -2341,14 +2341,20 @@ test("--help documents XDG_DATA_HOME and XDG_CACHE_HOME environment variables", 
   assert.match(r.stdout, /\$XDG_DATA_HOME\/harness/);
 });
 
-// ---- global AGENTS.md mounting (issue #85) ---------------------------------
+// ---- global context files mounting (issue #85) -----------------------------
 //
-// A single host ~/.agents/AGENTS.md is bind-mounted into each agent's expected
-// context path. Reuses makeSkillsHome() for an isolated temp HOME.
+// A single host ~/.agents/AGENTS.md and ~/.claude/CLAUDE.md are bind-mounted
+// into each agent's context directory. Reuses makeSkillsHome() for an isolated
+// temp HOME.
 
 function writeAgentsMd(home) {
   fs.mkdirSync(path.join(home, ".agents"), { recursive: true });
   fs.writeFileSync(path.join(home, ".agents", "AGENTS.md"), "# global rules\n");
+}
+
+function writeClaudeMd(home) {
+  fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".claude", "CLAUDE.md"), "# claude rules\n");
 }
 
 test("global ~/.agents/AGENTS.md is mounted to the pi context path", () => {
@@ -2408,11 +2414,72 @@ test("global ~/.agents/AGENTS.md is mounted to the hermes context path", () => {
   }
 });
 
-test("--no-agents-md suppresses the global AGENTS.md mount", () => {
+test("global ~/.claude/CLAUDE.md is mounted to the pi context path", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeClaudeMd(home);
+  try {
+    const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/CLAUDE.md")),
+      `expected CLAUDE.md mount at pi path in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("global ~/.claude/CLAUDE.md is mounted to the opencode context path", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeClaudeMd(home);
+  try {
+    const r = runCli(["-a", "opencode", "-p", "noop"], {
+      extraEnv: { HOME: home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) =>
+        arg.endsWith(":/home/harness/.config/opencode/CLAUDE.md"),
+      ),
+      `expected CLAUDE.md mount at opencode path in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("AGENTS.md and CLAUDE.md are both mounted when both exist", () => {
   const { home, cleanup } = makeSkillsHome();
   writeAgentsMd(home);
+  writeClaudeMd(home);
   try {
-    const r = runCli(["--no-agents-md", "-p", "noop"], {
+    const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/AGENTS.md")),
+      `expected AGENTS.md mount in: ${a.join(" ")}`,
+    );
+    assert.ok(
+      a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/CLAUDE.md")),
+      `expected CLAUDE.md mount in: ${a.join(" ")}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("--no-context-files suppresses all global context file mounts", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  writeClaudeMd(home);
+  try {
+    const r = runCli(["--no-context-files", "-p", "noop"], {
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
@@ -2421,15 +2488,45 @@ test("--no-agents-md suppresses the global AGENTS.md mount", () => {
     assert.equal(
       a.some((arg) => arg.includes("/AGENTS.md")),
       false,
-      `--no-agents-md must not mount AGENTS.md: ${a.join(" ")}`,
+      `--no-context-files must not mount AGENTS.md: ${a.join(" ")}`,
+    );
+    assert.equal(
+      a.some((arg) => arg.includes("/CLAUDE.md")),
+      false,
+      `--no-context-files must not mount CLAUDE.md: ${a.join(" ")}`,
     );
   } finally {
     cleanup();
   }
 });
 
-test("non-existent ~/.agents/AGENTS.md is silently skipped", () => {
-  // Empty temp HOME — no AGENTS.md exists, so the mount is skipped.
+test("-nc short flag suppresses all global context file mounts", () => {
+  const { home, cleanup } = makeSkillsHome();
+  writeAgentsMd(home);
+  writeClaudeMd(home);
+  try {
+    const r = runCli(["-nc", "-p", "noop"], { extraEnv: { HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const a = dockerArgs(r.stdout);
+    assert.ok(a, "expected DOCKER_INVOKED line");
+    assert.equal(
+      a.some((arg) => arg.includes("/AGENTS.md") || arg.includes("/CLAUDE.md")),
+      false,
+      `-nc must not mount context files: ${a.join(" ")}`,
+    );
+    // -nc must not leak as an unrecognized-flag warning.
+    assert.equal(
+      /unrecognized flag/.test(r.stderr),
+      false,
+      `-nc must be recognized: ${r.stderr}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("non-existent global context files are silently skipped", () => {
+  // Empty temp HOME — no AGENTS.md/CLAUDE.md exist, so mounts are skipped.
   const { home, cleanup } = makeSkillsHome();
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
@@ -2437,16 +2534,16 @@ test("non-existent ~/.agents/AGENTS.md is silently skipped", () => {
     const a = dockerArgs(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
-      a.some((arg) => arg.includes("/AGENTS.md")),
+      a.some((arg) => arg.includes("/AGENTS.md") || arg.includes("/CLAUDE.md")),
       false,
-      `non-existent AGENTS.md must not be mounted: ${a.join(" ")}`,
+      `non-existent context files must not be mounted: ${a.join(" ")}`,
     );
   } finally {
     cleanup();
   }
 });
 
-test("global AGENTS.md mount works with --file mode", () => {
+test("global context file mount works with --file mode", () => {
   const { home, cleanup } = makeSkillsHome();
   writeAgentsMd(home);
   try {
@@ -2469,8 +2566,9 @@ test("global AGENTS.md mount works with --file mode", () => {
   }
 });
 
-test("--help documents --no-agents-md", () => {
+test("--help documents --no-context-files and -nc", () => {
   const r = runCli(["--help"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /--no-agents-md/);
+  assert.match(r.stdout, /--no-context-files/);
+  assert.match(r.stdout, /-nc/);
 });
