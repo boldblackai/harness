@@ -15,11 +15,12 @@ const SECCOMP_PROFILE = path.join(
 interface Args extends ParsedArgs {
   help: boolean;
   h: boolean;
-  // minimist --no- prefix: --no-verify / --no-skills set these to false; NOT in boolean[] to avoid double-negation
+  // minimist --no- prefix: --no-verify / --no-skills / --no-context-files set these to false; NOT in boolean[] to avoid double-negation
   verify?: boolean;
   ephemeral: boolean;
   local: boolean;
   skills?: boolean;
+  "context-files"?: boolean;
   "env-file"?: string;
   e?: string;
   file?: string;
@@ -48,6 +49,10 @@ interface AgentAdapter {
   buildCommand(options: AgentOptions): string[];
   extraDockerArgs?(options: AgentOptions): string[];
   persistMounts?(): PersistMount[];
+  // Container directory where this agent loads global context files. The
+  // host's ~/.agents/AGENTS.md and ~/.claude/CLAUDE.md are bind-mounted into
+  // this directory (as AGENTS.md / CLAUDE.md) when present.
+  contextDir?(): string;
 }
 
 class PiAdapter implements AgentAdapter {
@@ -70,6 +75,10 @@ class PiAdapter implements AgentAdapter {
       { hostSubpath: "", containerPath: "/home/harness/.pi/agent" },
       { hostSubpath: "npm", containerPath: "/home/harness/.local/share/npm" },
     ];
+  }
+
+  contextDir(): string {
+    return "/home/harness/.pi/agent";
   }
 }
 
@@ -101,6 +110,10 @@ class OpenCodeAdapter implements AgentAdapter {
       },
     ];
   }
+
+  contextDir(): string {
+    return "/home/harness/.config/opencode";
+  }
 }
 
 class HermesAdapter implements AgentAdapter {
@@ -113,6 +126,10 @@ class HermesAdapter implements AgentAdapter {
 
   persistMounts(): PersistMount[] {
     return [{ hostSubpath: "", containerPath: "/home/harness/.hermes" }];
+  }
+
+  contextDir(): string {
+    return "/home/harness/.hermes";
   }
 }
 
@@ -325,6 +342,7 @@ Options:
   -v, --volumes <spec>   Additional volume mount (host:container[:opts]); may be repeated
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
+  --no-context-files     Disable mounting global context files (~/.agents/AGENTS.md, ~/.claude/CLAUDE.md); alias -nc
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
   --local                Force local mode even with -e (use LM Studio / local defaults)
   -h, --help             Show this help message
@@ -395,7 +413,12 @@ const MINIMIST_OPTS = {
   },
 };
 
-const argv = minimist<Args>(process.argv.slice(2), MINIMIST_OPTS);
+// Translate pi's short context-files flag (-nc) to its long form before
+// minimist, which would otherwise split -nc into clustered -n -c flags.
+const rawArgs = process.argv
+  .slice(2)
+  .map((a) => (a === "-nc" ? "--no-context-files" : a));
+const argv = minimist<Args>(rawArgs, MINIMIST_OPTS);
 
 // Warn on unrecognized flags
 {
@@ -407,6 +430,7 @@ const argv = minimist<Args>(process.argv.slice(2), MINIMIST_OPTS);
     ...Object.values(MINIMIST_OPTS.alias),
     "verify", // --no-verify sets verify=false
     "skills", // --no-skills sets skills=false
+    "context-files", // --no-context-files / -nc sets context-files=false
     "local",
   ]);
   const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
@@ -424,6 +448,7 @@ if (argv.help) {
 
 const noVerify = argv.verify === false;
 const noSkills = argv.skills === false;
+const noContextFiles = argv["context-files"] === false;
 const localMode = argv.local;
 const envFilePath = argv["env-file"] || null;
 const fileArg = argv.file || null;
@@ -558,6 +583,31 @@ async function run(prompt: string | null): Promise<void> {
     for (const sd of skillDirs) {
       if (fs.existsSync(sd.host) && fs.statSync(sd.host).isDirectory()) {
         volumeArgs.push("-v", `${sd.host}:${sd.container}`);
+      }
+    }
+  }
+
+  // Mount the user's global context files into the adapter's context directory
+  // so cross-agent rules apply inside the container. Mirrors pi's context-files
+  // model (AGENTS.md + CLAUDE.md). Each file is skipped when absent (like skills
+  // dirs); --no-context-files / -nc disables all of them.
+  if (!noContextFiles) {
+    const contextDir = adapter.contextDir?.();
+    if (contextDir) {
+      const contextFiles = [
+        {
+          host: path.resolve(os.homedir(), ".agents", "AGENTS.md"),
+          name: "AGENTS.md",
+        },
+        {
+          host: path.resolve(os.homedir(), ".claude", "CLAUDE.md"),
+          name: "CLAUDE.md",
+        },
+      ];
+      for (const cf of contextFiles) {
+        if (fs.existsSync(cf.host) && fs.statSync(cf.host).isFile()) {
+          volumeArgs.push("-v", `${cf.host}:${contextDir}/${cf.name}`);
+        }
       }
     }
   }
