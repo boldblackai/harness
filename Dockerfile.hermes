@@ -84,10 +84,10 @@ RUN set -eux && \
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-dev python3-venv build-essential git libffi-dev \
+        python3 python3-dev python3-venv build-essential git libffi-dev libolm-dev \
     && git clone --depth 1 --branch v2026.5.16 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python python3 \
-    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
+    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
     && chown -R harness:harness /opt/hermes-agent \
     && rm -rf /opt/hermes-agent/.git /root/.cache/uv \
