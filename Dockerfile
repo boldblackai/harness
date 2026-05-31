@@ -15,6 +15,7 @@ RUN apt-get update && \
         git \
         gnupg \
         jq \
+        openssh-client \
         ripgrep \
         sudo \
     && mkdir -p /etc/apt/keyrings \
