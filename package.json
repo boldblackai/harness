@@ -1,6 +1,6 @@
 {
   "name": "@capotej/harness",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "Portable environment for running coding agents in a container",
   "bin": {
     "harness": "bin/harness.js"

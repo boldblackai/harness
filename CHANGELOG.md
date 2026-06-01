@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.8.2] - 2026-06-01
+
+### Summary
+
+Adds context file mounting — `~/.agents/AGENTS.md` and `~/.claude/CLAUDE.md` are now automatically bind-mounted into the agent's context directory so cross-agent rules apply inside the container. Disable with `--no-context-files` (or `-nc`). Adds `openssh-client` to the base image and `libolm-dev` with the `matrix` extra to the hermes variant, enabling Matrix protocol support. Also includes a documentation website (GitHub Pages) and AWS deployment guide for hermes claws.
+
+### Changes
+
+- d0b2f9e feat: add libolm-dev to hermes Docker image and matrix extra (#88)
+- 233fda2 feat: mount global ~/.agents/AGENTS.md into agent context path (#85) (#86)
+- e60c9ae feat: add openssh-client to base image (#87)
+- bae55fd docs: add AWS deployment guide for hermes claw (#71)
+- df8abd3 fix(docs): nav paths relative to docs_dir, not project root (#84)
+- 8d2e9eb chore: pin all GitHub Actions by full commit SHA (#83)
+- bffffbf docs: mark documentation website RFC as Implemented (#82)
+- 2c6bce6 fix(docs): use uv tool install and add PR preview deployments (#81)
+- f85a3ed docs: add Zensical documentation website with GitHub Pages deployment (#80)
+- 23221be docs: add RFC format note and propose documentation website (#76)
+
 ## [1.8.1] - 2026-05-25
 
 ### Summary

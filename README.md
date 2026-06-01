@@ -20,6 +20,7 @@ and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can poin
 - **Local-first** — defaults to LM Studio with `gemma-4-e4b`. Drop in an `--env-file` to use Anthropic, OpenRouter, OpenAI, Gemini, and others.
 - **Stateful or one-shot** — interactive runs persist agent state under `$XDG_DATA_HOME/harness/<project>/<agent>/` (defaults to `~/.local/share/harness/`); one-shot prompts (`-p` or piped stdin) stay ephemeral.
 - **User skills** — automatically mounts `~/.agents/skills` and `~/.claude/skills` into the container so agents can discover and use custom skills. Disable with `--no-skills`.
+- **Context files** — automatically mounts `~/.agents/AGENTS.md` and `~/.claude/CLAUDE.md` into the agent's context directory so cross-agent rules apply inside the container. Disable with `--no-context-files` (`-nc`).
 - **Zero install** — `npx @capotej/harness` just works.
 
 ## Quickstart
@@ -233,6 +234,7 @@ If an old `.harness/` directory exists in your working directory, harness will e
 | `--volumes`   | `-v`  | Additional volume mount (`host:container[:opts]`); may be repeated |
 | `--no-verify` |       | Skip cosign signature and provenance verification |
 | `--no-skills` |       | Disable mounting user skills directories (`~/.agents/skills`, `~/.claude/skills`) |
+| `--no-context-files` | `-nc` | Disable mounting global context files (`~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`) |
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
 | `--help`      | `-h`  | Show help |

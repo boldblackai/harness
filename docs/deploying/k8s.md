@@ -9,7 +9,7 @@ long-running "claw" (a persistent agent process) to a K8s cluster using the harn
 
 | Component | Description |
 |---|---|
-| **Deployment** | Single-replica pod running `ghcr.io/capotej/harness:hermes-1.8.0` |
+| **Deployment** | Single-replica pod running `ghcr.io/capotej/harness:hermes-1.8.2` |
 | **PVC** | 100Gi persistent volume for agent data (`/home/harness/.hermes-openrouter`) |
 | **PDB** | PodDisruptionBudget ensuring at least 1 pod is available |
 | **Secrets** | API keys sourced from a K8s Secret (`k8sclaw-secrets`) |
@@ -18,7 +18,7 @@ long-running "claw" (a persistent agent process) to a K8s cluster using the harn
 
 - A Kubernetes cluster ≥ 1.21 (k3s or any compatible runtime)
 - `kubectl` installed and configured with cluster access
-- Container image access to `ghcr.io/capotej/harness:hermes-1.8.0`
+- Container image access to `ghcr.io/capotej/harness:hermes-1.8.2`
 - A default StorageClass provisioned (or specify one in `k8sclaw.yaml`)
 
 ## Deploy
@@ -98,7 +98,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: k8sclaw
-          image: ghcr.io/capotej/harness:hermes-1.8.0
+          image: ghcr.io/capotej/harness:hermes-1.8.2
           imagePullPolicy: Always
           command: ["/tini", "--", "hermes", "gateway"]
           lifecycle:
