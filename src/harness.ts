@@ -627,8 +627,6 @@ async function run(prompt: string | null): Promise<void> {
     "--cap-drop=ALL",
     "--cap-add=NET_RAW",
     "--security-opt",
-    "no-new-privileges:true",
-    "--security-opt",
     `seccomp=${SECCOMP_PROFILE}`,
     ...envFileArgs,
     ...cloudModeEnv,

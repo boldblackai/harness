@@ -13,7 +13,7 @@ one at a directory (or file) without giving it access to your entire machine.
 
 ## Why Harness?
 
-- **Sandboxed by default** — capability-dropped container with `no-new-privileges`;
+- **Sandboxed by default** — capability-dropped container with seccomp hardening;
   the agent only sees the directory you mount.
 - **Three agents, one CLI** — switch between `pi`, `opencode`, and `hermes` with
   `-a`. Same flags, same flow.

@@ -550,13 +550,10 @@ test("docker invocation always includes hardening flags", () => {
   assert.ok(a.includes("--rm"));
   assert.ok(a.includes("--cap-drop=ALL"));
   assert.ok(a.includes("--cap-add=NET_RAW"));
+  // seccomp profile blocks AF_ALG socket creation
   const sIdx = a.indexOf("--security-opt");
   assert.notEqual(sIdx, -1);
-  assert.equal(a[sIdx + 1], "no-new-privileges:true");
-  // seccomp profile blocks AF_ALG socket creation
-  const sIdx2 = a.indexOf("--security-opt", sIdx + 1);
-  assert.notEqual(sIdx2, -1);
-  assert.match(a[sIdx2 + 1], /^seccomp=.*block-af-alg\.json$/);
+  assert.match(a[sIdx + 1], /^seccomp=.*block-af-alg\.json$/);
   // -w /workspace is set
   const wIdx = a.indexOf("-w");
   assert.notEqual(wIdx, -1);

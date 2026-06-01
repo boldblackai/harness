@@ -14,7 +14,7 @@ and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can poin
 
 ## Features
 
-- **Sandboxed by default** — capability-dropped container with `no-new-privileges`; the agent only sees the directory (or file) you mount.
+- **Sandboxed by default** — capability-dropped container with seccomp hardening; the agent only sees the directory (or file) you mount.
 - **Three agents, one CLI** — switch between `pi`, `opencode`, and `hermes` with `-a`. Same flags, same flow.
 - **Supply-chain hardened** — the image is signed and verified with cosign and SLSA provenance on every run; dependencies installed inside the container are always pinned and verified where possible and a 7-day "cooldown" is used to mitigate supply-chain attacks.
 - **Local-first** — defaults to LM Studio with `gemma-4-e4b`. Drop in an `--env-file` to use Anthropic, OpenRouter, OpenAI, Gemini, and others.
@@ -185,7 +185,6 @@ Harness layers protections at runtime, image, and dependency level.
 Each run starts the container with:
 
 - `--cap-drop=ALL --cap-add=NET_RAW` — minimal capability set
-- `--security-opt no-new-privileges:true` — block privilege escalation
 - `--security-opt seccomp=...` — inline seccomp profile blocks `socket(AF_ALG)` to prevent kernel crypto API access (a known container escape vector)
 - Only your mounted directory (or single file with `-f`) is visible to the agent
 
