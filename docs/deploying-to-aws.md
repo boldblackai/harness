@@ -26,7 +26,7 @@ Set a couple of shell variables used throughout:
 ```bash
 export AWS_REGION=us-east-1
 export CLAW_NAME=hermes-claw
-export HARNESS_IMAGE=ghcr.io/capotej/harness:hermes-1.8.2
+export HARNESS_IMAGE=ghcr.io/capotej/harness:hermes-1.8.3
 ```
 
 ---
@@ -177,7 +177,7 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
   "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/hermes-claw-task",
   "containerDefinitions": [{
     "name": "hermes",
-    "image": "ghcr.io/capotej/harness:hermes-1.8.2",
+    "image": "ghcr.io/capotej/harness:hermes-1.8.3",
     "essential": true,
     "command": ["hermes", "gateway"],
     "user": "1000:1000",
@@ -386,7 +386,7 @@ ExecStart=/usr/bin/docker run --rm --name hermes-claw \
   -e HERMES_HOME=/home/harness/.hermes-openrouter \
   -e HF_HOME=/home/harness/.hermes-openrouter/.cache/huggingface \
   -v /var/lib/hermes-claw:/home/harness/.hermes-openrouter \
-  ghcr.io/capotej/harness:hermes-1.8.2 \
+  ghcr.io/capotej/harness:hermes-1.8.3 \
   hermes gateway
 ExecStop=/usr/bin/docker stop hermes-claw
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.8.3] - 2026-06-05
+
+### Summary
+
+Bumps the GitHub CLI (`gh`) to 2.93.0 and hermes-agent to v2026.5.29.2. The hermes-agent update brings the full v0.15.x release series — a major refactor that collapses the core agent loop by 76%, adds a kanban multi-agent platform with swarm topology, dramatically improves cold-start performance, adds Bitwarden Secrets Manager integration, an interactive MCP catalog picker, and fixes a dashboard infinite-reload loop in Docker loopback mode.
+
+### Dependency Updates
+
+- updated `gh` from 2.92.0 to 2.93.0
+- updated hermes-agent from v2026.5.16 to v2026.5.29.2
+
+### Upstream Release Notes
+
+#### hermes-agent v2026.5.16 → v2026.5.29.2
+
+**v2026.5.28** — The Velocity Release (1,302 commits, 747 PRs). Core `run_agent.py` reduced from 16K to 3.8K lines (-76%). Kanban grew into a full multi-agent platform with swarm topology, orchestrator auto-decomposition, per-task model overrides, scheduled tasks, and worktree-per-task. Cold-start perf improved: another second shaved, 47% fewer per-conversation function calls. `session_search` is 4,500× faster. Bitwarden Secrets Manager replaces per-provider API keys. Skill bundles, interactive MCP catalog picker, Ink TUI multi-session orchestrator. Two new image_gen providers (Krea 2, FAL). xAI deep integration (Web Search plugin, natural TTS, base_url leak guard). 15 P0 + 65 P1 fixes.
+
+**v2026.5.29** — Hotfix for v0.15.0. Dashboard infinite-reload loop in loopback/Docker mode fixed. Docker `--insecure` is now an explicit env opt-in (`HERMES_DASHBOARD_INSECURE=1`). MCP bare command resolution fixed for Docker. Kanban worker SIGTERM fix. Full skills.sh catalog (858 → 19,932 entries). Hindsight narrowed to observation-only.
+
+**v2026.5.29.2** — Packaging fix: bundled `plugin.yaml` manifests now shipped in wheel and sdist.
+
+### Changes
+
+- c0cbe30 chore: bump gh 2.92.0 -> 2.93.0 and hermes-agent v2026.5.16 -> v2026.5.29.2 (#91)
+
 ## [1.8.2] - 2026-06-01
 
 ### Summary
