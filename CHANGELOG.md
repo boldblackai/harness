@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.4] - 2026-06-07
+
+### Summary
+
+Adds AWS Bedrock support to the hermes variant by enabling the `bedrock` extra in the hermes-agent installation.
+
+### Dependency Updates
+
+- added `bedrock` extra to hermes-agent installation
+
+### Changes
+
+- 2d86507 Add bedrock to hermes-agent extras (#93)
+
 ## [1.8.3] - 2026-06-05
 
 ### Summary
