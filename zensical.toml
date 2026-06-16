@@ -3,7 +3,7 @@
 site_name = "Harness"
 site_description = "Run agents in a sandboxed container — ready to drop into any project."
 site_author = "Julio Capote"
-site_url = "https://capotej.github.io/harness/"
+site_url = "https://boldblackai.github.io/harness/"
 
 copyright = """
 Copyright &copy; 2025 Julio Capote

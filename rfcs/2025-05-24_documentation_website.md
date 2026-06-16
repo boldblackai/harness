@@ -24,7 +24,7 @@ Harness currently relies on `README.md` and `AGENTS.md` for documentation. A ded
   - Output to `site/` directory
   - Scaffolding via `zensical new .`
   - Build via `zensical build --clean`
-- **GitHub Pages** — hosted at `https://capotej.github.io/harness/`
+- **GitHub Pages** — hosted at `https://boldblackai.github.io/harness/`
 - **GitHub Actions** — automated build and deploy on push to `main`
 
 ## Proposed Directory Structure
