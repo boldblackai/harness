@@ -184,6 +184,7 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
     "linuxParameters": { "initProcessEnabled": true },
     "environment": [
       { "name": "TZ", "value": "America/New_York" },
+      { "name": "HARNESS_CLOUD_MODE", "value": "1" },
       { "name": "HERMES_HOME", "value": "/home/harness/.hermes" },
       { "name": "HF_HOME", "value": "/home/harness/.hermes/.cache/huggingface" }
     ],
@@ -383,6 +384,7 @@ ExecStartPre=-/usr/bin/docker rm -f hermes-claw
 ExecStart=/usr/bin/docker run --rm --name hermes-claw \
   --env-file /etc/hermes-claw.env \
   -e TZ=America/New_York \
+  -e HARNESS_CLOUD_MODE=1 \
   -e HERMES_HOME=/home/harness/.hermes \
   -e HF_HOME=/home/harness/.hermes/.cache/huggingface \
   -v /var/lib/hermes-claw:/home/harness/.hermes \
