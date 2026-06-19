@@ -23,7 +23,7 @@ one at a directory (or file) without giving it access to your entire machine.
   `--env-file` to use Anthropic, OpenRouter, OpenAI, Gemini, and others.
 - **Stateful or one-shot** — interactive runs persist agent state; one-shot
   prompts stay ephemeral.
-- **Zero install** — `npx @capotej/harness` just works.
+- **Zero install** — `npx @boldblackai/harness` just works.
 
 ## Quick start
 
@@ -37,7 +37,7 @@ lms get google/gemma-4-e4b
 Then run:
 
 ```bash
-npx @capotej/harness -p "write a fizzbuzz in Go"
+npx @boldblackai/harness -p "write a fizzbuzz in Go"
 ```
 
 See the [Getting Started](getting-started.md) guide for more details.

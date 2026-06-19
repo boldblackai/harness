@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ghcr.io/capotej/harness:latest
+ARG BASE_IMAGE=ghcr.io/boldblackai/harness:latest
 FROM ${BASE_IMAGE}
 
 USER root

@@ -9,7 +9,7 @@ icon: lucide/terminal
 ## Local mode
 
 ```bash
-npx @capotej/harness -a opencode -p "write a fizzbuzz in Go"
+npx @boldblackai/harness -a opencode -p "write a fizzbuzz in Go"
 ```
 
 When using LM Studio locally, set the model's context length to at least 32k tokens.
@@ -20,8 +20,8 @@ The entrypoint detects the provider from your env file. Priority order: Anthropi
 
 ```bash
 echo "OPENROUTER_API_KEY=sk-or-***" > .env
-npx @capotej/harness -a opencode -e .env -p "refactor the auth module"
-npx @capotej/harness -a opencode -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
+npx @boldblackai/harness -a opencode -e .env -p "refactor the auth module"
+npx @boldblackai/harness -a opencode -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
 ```
 
 Supported keys:
@@ -39,5 +39,5 @@ The `-m` flag takes a bare model name; the provider prefix is added automaticall
 To pass env vars but stay in local mode:
 
 ```bash
-npx @capotej/harness -a opencode -e .env --local -p "refactor the auth module"
+npx @boldblackai/harness -a opencode -e .env --local -p "refactor the auth module"
 ```

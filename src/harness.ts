@@ -134,7 +134,7 @@ class HermesAdapter implements AgentAdapter {
 }
 
 const IDENTITY_REGEXP =
-  "https://github.com/capotej/harness/.github/workflows/docker.yml@refs/tags/";
+  "https://github.com/boldblackai/harness/.github/workflows/docker.yml@refs/tags/";
 const OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 
 interface CosignError extends NodeJS.ErrnoException {
@@ -359,7 +359,7 @@ You can also pipe text to harness as an implied -p:
 `;
 
 const workspace = process.cwd();
-const REGISTRY = "ghcr.io/capotej/harness";
+const REGISTRY = "ghcr.io/boldblackai/harness";
 const VERSION: string = require("../package.json").version;
 const IMAGE_TAG = process.env.HARNESS_IMAGE_TAG ?? VERSION;
 
