@@ -29,9 +29,28 @@ primary_region = "iad"
 [processes]
   app = "hermes gateway"
 
+# Persistence volumes — mirror what the `harness` CLI bind-mounts on an
+# interactive run, so claw state survives restarts: hermes config/sessions,
+# XDG config (jj/git config the agent writes), and mise tools & trust
+# settings. Each path needs its own fly volume.
 [[mounts]]
   source = "my_hermes_agent_claw_data"
   destination = "/home/harness/.hermes"
+  initial_size = "1gb"
+
+[[mounts]]
+  source = "my_hermes_agent_claw_config"
+  destination = "/home/harness/.config"
+  initial_size = "1gb"
+
+[[mounts]]
+  source = "my_hermes_agent_claw_mise_data"
+  destination = "/home/harness/.local/share/mise"
+  initial_size = "1gb"
+
+[[mounts]]
+  source = "my_hermes_agent_claw_mise_state"
+  destination = "/home/harness/.local/state/mise"
   initial_size = "1gb"
 
 [[vm]]
@@ -47,7 +66,10 @@ Create the app, volume, and secrets, then deploy:
 
 ```bash
 fly apps create my-hermes-agent-claw
-fly volumes create my_hermes_agent_claw_data --region iad --size 1 --app my-hermes-agent-claw
+fly volumes create my_hermes_agent_claw_data      --region iad --size 1 --app my-hermes-agent-claw
+fly volumes create my_hermes_agent_claw_config      --region iad --size 1 --app my-hermes-agent-claw
+fly volumes create my_hermes_agent_claw_mise_data   --region iad --size 1 --app my-hermes-agent-claw
+fly volumes create my_hermes_agent_claw_mise_state  --region iad --size 1 --app my-hermes-agent-claw
 fly secrets set OPENROUTER_API_KEY=<your-key> --app my-hermes-agent-claw
 # https://hermes-agent.nousresearch.com/docs/user-guide/messaging/telegram#option-b-manual-configuration
 fly secrets set TELEGRAM_BOT_TOKEN=<your-token> --app my-hermes-agent-claw
