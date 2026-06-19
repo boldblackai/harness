@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.8.5] - 2026-06-19
+
+### Summary
+
+Adds project-level config persistence — the container's `~/.config` is now persisted at the project (cwd) level and shared across every agent working in the same project, so tool configs (e.g. jj) survive across interactive runs with no new flags. Also removes `sudo` and sudoers from the base image and renames the package scope from `capotej` to `boldblackai` across the repo. Bundled agent bumps: `pi-coding-agent` 0.73.1 → 0.79.2 (now published under the `@earendil-works` scope) and `hermes-agent` v2026.5.29.2 → v2026.6.5.
+
+### Dependency Updates
+
+- updated `pi-coding-agent` from `@mariozechner/pi-coding-agent@0.73.1` to `@earendil-works/pi-coding-agent@0.79.2`
+- updated `hermes-agent` from `v2026.5.29.2` to `v2026.6.5`
+- updated `gh` from `2.93.0` to `2.94.0`
+- updated `uv` from `0.11.16` to `0.11.19`
+- updated `cosign` from `3.0.6` to `3.1.1`
+
+### Upstream Release Notes
+
+#### @earendil-works/pi-coding-agent 0.73.1 → 0.79.2
+
+**v0.74.0** — Repository and package references moved to `earendil-works/pi-mono` and the `@earendil-works/*` scopes.
+**v0.74.1** — Image generation support (OpenRouter), Together AI provider, Windows ARM64 binaries, and improved markdown/terminal rendering.
+**v0.74.2** — Rescue release telling Node 20 users to upgrade Node; `pi update` self-update commands now pass `--ignore-scripts`.
+**v0.75.0** — **Breaking:** raised minimum Node.js to 22.19.0; system prompt/context boundaries now use explicit XML tags; user-scoped npm pi packages install under `~/.pi/agent/npm/`; undici 8 dispatcher replaces the custom fetch override.
+**v0.75.1** — Fixed config selectors, Anthropic/Bedrock/Azure provider compat, and OpenCode Go Kimi reasoning replay; removed non-working Codex fast model variants.
+**v0.75.2** — Fixed Bun-compiled binaries, Xiaomi MiMo thinking-mode replay, and Windows external-editor / npm self-update handoffs.
+**v0.75.3** — Fixed undici 8 HTTP/2 destroyed-session crashes by reverting to HTTP/1.1-only fetch dispatcher behavior.
+**v0.75.4** — Hardened npm install/release path (generated shrinkwrap, lifecycle-script allowlists, isolated install smoke tests); interactive update notes after `pi update`.
+**v0.75.5** — Collapsed read tool cards, async file tools (Windows), `compat.forceAdaptiveThinking` for custom Anthropic providers, more reliable git-pinned package updates.
+**v0.76.0** — `--session-id` for exact project-local session IDs, `excludeFromContext` for RPC bash, configurable provider retries/timeouts, better terminal editing (Apple Terminal, Windows/JetBrains detection, Unicode word navigation).
+**v0.77.0** — Claude Opus 4.8 support, `--exclude-tools`/`-xt` selective tool disablement, headless Codex subscription device-code login, `streamingBehavior` on extension input events.
+**v0.78.0** — `--name`/`-n` session naming, OSC 8 `file://` hyperlinks in file-tool titles, exported `convertToPng`/`parseArgs` for extension authors.
+**v0.78.1** — Ant Ling + NVIDIA NIM providers, MiniMax-M3 support, `ctx.mode` and `ctx.getSystemPromptOptions()` for extensions.
+**v0.79.0** — Project trust gating for local inputs (with `--approve`/`--no-approve`), extension-controlled trust decisions, prompt-cache hit rate in the footer, richer SDK/RPC extension exports.
+**v0.79.1** — Claude Fable 5, prompt-template default arguments (`${1:-7}`), `defaultProjectTrust` setting, extension autocomplete trigger characters.
+**v0.79.2** — Clearer Bedrock data-retention validation guidance; experimental first-time setup flow (`PI_EXPERIMENTAL=1`); project-trust and OpenAI/Azure context-window fixes.
+
+#### hermes-agent v2026.5.29.2 → v2026.6.5
+
+**v2026.6.5** (v0.16.0, "The Surface Release") — New native desktop app (macOS/Linux/Windows) with in-app self-update, drag-and-drop files, an inline model picker, and concurrent multi-profile sessions that can connect to remote Hermes gateways over OAuth or username/password. The web dashboard grew a full admin panel (messaging channels, MCP catalog, credentials, webhooks, memory, pluggable OIDC / username-password login), plus a "Quick Setup via Nous Portal" first-run path. Also: trimmed default skill set, NVIDIA/skills as a trusted tap, fuzzy model picker everywhere (desktop/web/TUI/CLI), and `/undo [N]` across all interfaces. Rode along with 2 P0 + 62 P1 closures and a security round (Starlette CVE pin, SSRF off-loop hardening, subprocess credential stripping).
+
+### Changes
+
+- 43e549f Remove sudo and sudoers from base image (#89) (#99)
+- 62fa2e0 feat: persist container ~/.config at the project (cwd) level (#94)
+- 8f321fe chore: rename capotej → boldblackai across repo (#98)
+- 8221e88 chore: bump gh, cosign, uv, hermes-agent (#97)
+- d8e8fb8 Update references to bb site (#95)
+
 ## [1.8.4] - 2026-06-07
 
 ### Summary

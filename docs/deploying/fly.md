@@ -22,7 +22,7 @@ primary_region = "iad"
   HF_HOME = "/home/harness/.hermes-openrouter/.cache/huggingface"
 
 [build]
-  image = "ghcr.io/boldblackai/harness:hermes-1.8.4"
+  image = "ghcr.io/boldblackai/harness:hermes-1.8.5"
 
 [processes]
   app = "hermes gateway"
@@ -60,7 +60,7 @@ Message the bot via Telegram, or wire it up to a scheduled workflow — see the 
 
 ## Customizing the claw — *don't* extend the image
 
-When you want to give the claw extra capabilities (tool wrappers around your APIs, an opinionated initial system prompt, custom `gh`-style scripts), the temptation is to write a `Dockerfile` that does `FROM ghcr.io/boldblackai/harness:hermes-1.8.4` and bakes everything in. **Don't.** Two problems:
+When you want to give the claw extra capabilities (tool wrappers around your APIs, an opinionated initial system prompt, custom `gh`-style scripts), the temptation is to write a `Dockerfile` that does `FROM ghcr.io/boldblackai/harness:hermes-1.8.5` and bakes everything in. **Don't.** Two problems:
 
 1. The fly volume mounts on top of `/home/harness/.hermes-openrouter`, which silently hides anything you `COPY` into that path on first boot.
 2. Hermes treats `config.yaml` as mutable state — TUI tweaks, model switches, and persona toggles are persisted via `save_config()`. A derived image fights that ownership.
