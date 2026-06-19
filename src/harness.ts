@@ -559,6 +559,15 @@ async function run(prompt: string | null): Promise<void> {
         fs.mkdirSync(hostFullPath, { recursive: true });
         volumeArgs.push("-v", `${hostFullPath}:${mount.containerPath}`);
       }
+      // Project-level (agent-independent) XDG config persistence. Tools like
+      // jj write to ~/.config; persisting it one level above the per-agent
+      // persistRoot lets that config survive across runs and be shared by every
+      // agent working in this project. For opencode the more-specific
+      // .config/opencode mount above nests inside this one (Docker mounts
+      // parents before children), so opencode keeps its own per-agent bucket.
+      const xdgConfigPath = path.join(path.dirname(persistRoot), "xdg_config");
+      fs.mkdirSync(xdgConfigPath, { recursive: true });
+      volumeArgs.push("-v", `${xdgConfigPath}:/home/harness/.config`);
       // Per-agent mise persistence (data: tools/plugins, state: trust settings)
       const miseDataPath = path.join(persistRoot, "mise");
       fs.mkdirSync(miseDataPath, { recursive: true });

@@ -2578,3 +2578,112 @@ test("--help documents --no-context-files and -nc", () => {
   assert.match(r.stdout, /--no-context-files/);
   assert.match(r.stdout, /-nc/);
 });
+
+// ---- project-level XDG config persistence (issue #92) ----------------------
+//
+// The container's ~/.config (/home/harness/.config) is persisted at the
+// project (cwd) level — `$XDG_DATA_HOME/harness/<normalized-cwd>/xdg_config` —
+// one level above the per-agent persist root, so config written by tools like
+// jj survives across runs and is shared across agents. Like the other persist
+// mounts, this only happens for interactive (non-ephemeral) sessions.
+
+function hasScript() {
+  return (
+    spawnSync("sh", ["-c", "command -v script"], { encoding: "utf8" })
+      .status === 0
+  );
+}
+
+test("interactive (PTY) persists ~/.config at XDG_DATA_HOME/harness/<cwd>/xdg_config", () => {
+  if (!hasScript()) return; // needs a PTY; ubuntu-latest has util-linux script
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
+  const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
+    cwd: localWork,
+    env: {
+      ...process.env,
+      PATH: `${SHIM_DIR}:${process.env.PATH}`,
+      HARNESS_IMAGE_TAG: "test-tag",
+      HOME: homeDir,
+      XDG_DATA_HOME: xdgData,
+    },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const nCwd = normalizeCwd(localWork, homeDir);
+  // Host dir is created one level above the per-agent (pi) root.
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness", nCwd, "xdg_config")),
+    true,
+    `XDG_DATA_HOME/harness/${nCwd}/xdg_config should be created interactively`,
+  );
+  // And the docker args mount it to the container's XDG config home.
+  const a = dockerArgs(r.stdout.replace(/\r/g, ""));
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  assert.ok(
+    a.some((arg) => arg.endsWith(":/home/harness/.config")),
+    `expected -v mount ending in :/home/harness/.config in: ${a.join(" ")}`,
+  );
+});
+
+test("one-shot (-p) is ephemeral: no xdg_config dir, no ~/.config mount", () => {
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
+  const r = runCli(["-p", "noop"], {
+    extraEnv: { HOME: homeDir, XDG_DATA_HOME: xdgData },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const nCwd = normalizeCwd(WORK_DIR, homeDir);
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness", nCwd, "xdg_config")),
+    false,
+    "xdg_config must NOT be created for one-shot (ephemeral) runs",
+  );
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  assert.equal(
+    a.some((arg) => arg.endsWith(":/home/harness/.config")),
+    false,
+    `ephemeral run must NOT mount /home/harness/.config: ${a.join(" ")}`,
+  );
+});
+
+test("opencode interactive keeps both the cwd-level .config and per-agent .config/opencode mounts", () => {
+  if (!hasScript()) return;
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
+  const r = spawnSync(
+    "script",
+    ["-qfec", `node ${CLI} -a opencode`, "/dev/null"],
+    {
+      cwd: localWork,
+      env: {
+        ...process.env,
+        PATH: `${SHIM_DIR}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+        HOME: homeDir,
+        XDG_DATA_HOME: xdgData,
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout.replace(/\r/g, ""));
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  // Cwd-level whole-.config mount (issue #92) ...
+  assert.ok(
+    a.some((arg) => arg.endsWith(":/home/harness/.config")),
+    `expected cwd-level .config mount in: ${a.join(" ")}`,
+  );
+  // ... coexists with opencode's per-agent .config/opencode bucket.
+  assert.ok(
+    a.some((arg) => arg.endsWith(":/home/harness/.config/opencode")),
+    `expected per-agent .config/opencode mount in: ${a.join(" ")}`,
+  );
+});
