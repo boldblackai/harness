@@ -1820,8 +1820,12 @@ test("-a short alias selects the agent (parity with --agent)", () => {
   const aLong = dockerArgs(rLong.stdout);
   // Both must produce the same hermes-prefixed image and same container
   // command shape (slice from "hermes" forward).
-  const imgShort = aShort.find((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
-  const imgLong = aLong.find((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
+  const imgShort = aShort.find((x) =>
+    x.startsWith("ghcr.io/boldblackai/harness:"),
+  );
+  const imgLong = aLong.find((x) =>
+    x.startsWith("ghcr.io/boldblackai/harness:"),
+  );
   assert.equal(
     imgShort,
     imgLong,
@@ -1918,7 +1922,9 @@ test("image arg immediately precedes the container command", () => {
   assert.equal(r.status, 0, r.stderr);
   const a = dockerArgs(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
-  const imgIdx = a.findIndex((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
+  const imgIdx = a.findIndex((x) =>
+    x.startsWith("ghcr.io/boldblackai/harness:"),
+  );
   assert.notEqual(imgIdx, -1, "expected an image arg");
   // The token immediately after the image must be the agent binary
   // (start of the adapter's container command).
