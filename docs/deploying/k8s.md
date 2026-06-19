@@ -108,6 +108,10 @@ spec:
           env:
             - name: TZ
               value: "America/New_York"
+            # Signal the entrypoint to skip local defaults and
+            # auto-detect providers from API keys in the env.
+            - name: HARNESS_CLOUD_MODE
+              value: "1"
             - name: HERMES_HOME
               value: "/home/harness/.hermes"
             # Persist the faster-whisper model cache across restarts.

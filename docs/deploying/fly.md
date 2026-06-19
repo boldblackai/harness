@@ -17,6 +17,8 @@ primary_region = "iad"
 
 [env]
   TZ = "America/New_York"
+  # Signal the entrypoint to skip local defaults and auto-detect providers from API keys.
+  HARNESS_CLOUD_MODE = "1"
   # Persist the faster-whisper model cache across restarts.
   # Without this, the model re-downloads (~142 MB) on every deploy.
   HF_HOME = "/home/harness/.hermes/.cache/huggingface"
