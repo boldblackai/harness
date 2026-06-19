@@ -75,8 +75,9 @@ RUN set -eux && \
     echo "${EXPECTED}  /usr/local/bin/mise" | sha256sum --check --strict && \
     chmod +x /usr/local/bin/mise
 
+COPY entrypoint-common.sh /entrypoint-common.sh
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint-common.sh /entrypoint.sh
 
 # Install tini (PID 1 zombie reaper + signal forwarder)
 # Checksums from: https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-{amd64,arm64}.sha256sum

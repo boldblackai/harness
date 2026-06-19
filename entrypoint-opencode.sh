@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-export OPENCODE_DISABLE_AUTOUPDATE=true
-export OPENCODE_DISABLE_PRUNE=true
+# shellcheck source=entrypoint-common.sh
+source /entrypoint-common.sh
 
 if [ -z "$HARNESS_CLOUD_MODE" ]; then
 	# Local mode: use LM Studio config and default model
