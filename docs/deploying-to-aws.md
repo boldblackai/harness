@@ -38,7 +38,7 @@ export HARNESS_IMAGE=ghcr.io/boldblackai/harness:hermes-1.8.5
 | Component | Resource |
 |---|---|
 | **Compute** | Fargate task (1 vCPU / 2 GiB), single-replica service |
-| **Storage** | EFS file system + access point mounted at `/home/harness/.hermes-openrouter` |
+| **Storage** | EFS file system + access point mounted at `/home/harness/.hermes` |
 | **Secrets** | AWS Secrets Manager → injected as env vars via task definition `secrets[]` |
 | **Logs** | CloudWatch Logs (`/ecs/${CLAW_NAME}`) |
 | **Shell-in** | `aws ecs execute-command` (uses SSM Session Manager) |
@@ -74,7 +74,7 @@ Then update each one with the real value:
 
 ### 3. Create EFS for persistent state
 
-Hermes stores sessions, memories, skills, the faster-whisper model cache, and `config.yaml` under `/home/harness/.hermes-openrouter`. EFS is the right primitive: it survives task restarts, supports the `uid:gid=1000:1000` non-root `harness` user, and works across AZs.
+Hermes stores sessions, memories, skills, the faster-whisper model cache, and `config.yaml` under `/home/harness/.hermes`. EFS is the right primitive: it survives task restarts, supports the `uid:gid=1000:1000` non-root `harness` user, and works across AZs.
 
 ```bash
 EFS_ID=$(aws efs create-file-system --region "$AWS_REGION" \
@@ -184,8 +184,8 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
     "linuxParameters": { "initProcessEnabled": true },
     "environment": [
       { "name": "TZ", "value": "America/New_York" },
-      { "name": "HERMES_HOME", "value": "/home/harness/.hermes-openrouter" },
-      { "name": "HF_HOME", "value": "/home/harness/.hermes-openrouter/.cache/huggingface" }
+      { "name": "HERMES_HOME", "value": "/home/harness/.hermes" },
+      { "name": "HF_HOME", "value": "/home/harness/.hermes/.cache/huggingface" }
     ],
     "secrets": [
       { "name": "OPENROUTER_API_KEY",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/OPENROUTER_API_KEY" },
@@ -195,7 +195,7 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
     ],
     "mountPoints": [{
       "sourceVolume": "hermes-data",
-      "containerPath": "/home/harness/.hermes-openrouter",
+      "containerPath": "/home/harness/.hermes",
       "readOnly": false
     }],
     "logConfiguration": {
@@ -383,9 +383,9 @@ ExecStartPre=-/usr/bin/docker rm -f hermes-claw
 ExecStart=/usr/bin/docker run --rm --name hermes-claw \
   --env-file /etc/hermes-claw.env \
   -e TZ=America/New_York \
-  -e HERMES_HOME=/home/harness/.hermes-openrouter \
-  -e HF_HOME=/home/harness/.hermes-openrouter/.cache/huggingface \
-  -v /var/lib/hermes-claw:/home/harness/.hermes-openrouter \
+  -e HERMES_HOME=/home/harness/.hermes \
+  -e HF_HOME=/home/harness/.hermes/.cache/huggingface \
+  -v /var/lib/hermes-claw:/home/harness/.hermes \
   ghcr.io/boldblackai/harness:hermes-1.8.5 \
   hermes gateway
 ExecStop=/usr/bin/docker stop hermes-claw
@@ -479,7 +479,7 @@ Everything else — Secrets, Deployment, PDB, `kubectl exec` for shell-in — is
 
 Briefly, for the curious:
 
-- **App Runner** — closest to fly.io semantically, but [no persistent volume support](https://docs.aws.amazon.com/apprunner/latest/dg/architecture.html). Hermes' `~/.hermes-openrouter` state (sessions, memories, faster-whisper cache) wouldn't survive restarts.
+- **App Runner** — closest to fly.io semantically, but [no persistent volume support](https://docs.aws.amazon.com/apprunner/latest/dg/architecture.html). Hermes' `~/.hermes` state (sessions, memories, faster-whisper cache) wouldn't survive restarts.
 - **Elastic Beanstalk** — designed for traditional web apps with ELB/ASG/EC2 abstractions you don't need for a single-replica long-running bot. AWS's strategic container direction has moved to ECS and App Runner.
 - **Amplify** — full-stack web hosting (React/Next + auth + GraphQL + storage). Wrong product entirely for a long-running container with outbound Telegram polling.
 - **Lambda** — 15-minute execution cap, no persistent state, no long-running process. Hermes is a daemon, not a function.
