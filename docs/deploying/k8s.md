@@ -10,7 +10,7 @@ long-running "claw" (a persistent agent process) to a K8s cluster using the harn
 | Component | Description |
 |---|---|
 | **Deployment** | Single-replica pod running `ghcr.io/boldblackai/harness:hermes-1.8.5` |
-| **PVC** | 100Gi persistent volume for agent data (`/home/harness/.hermes-openrouter`) |
+| **PVC** | 100Gi persistent volume for agent data (`/home/harness/.hermes`) |
 | **PDB** | PodDisruptionBudget ensuring at least 1 pod is available |
 | **Secrets** | API keys sourced from a K8s Secret (`k8sclaw-secrets`) |
 
@@ -108,12 +108,16 @@ spec:
           env:
             - name: TZ
               value: "America/New_York"
+            # Signal the entrypoint to skip local defaults and
+            # auto-detect providers from API keys in the env.
+            - name: HARNESS_CLOUD_MODE
+              value: "1"
             - name: HERMES_HOME
-              value: "/home/harness/.hermes-openrouter"
+              value: "/home/harness/.hermes"
             # Persist the faster-whisper model cache across restarts.
             # Without this, the model re-downloads (~142 MB) on every pod restart.
             - name: HF_HOME
-              value: "/home/harness/.hermes-openrouter/.cache/huggingface"
+              value: "/home/harness/.hermes/.cache/huggingface"
             #
             # add/modify any environment variables here
             #  https://hermes-agent.nousresearch.com/docs/reference/environment-variables
@@ -140,7 +144,7 @@ spec:
                   key: GH_TOKEN
           volumeMounts:
             - name: data
-              mountPath: /home/harness/.hermes-openrouter
+              mountPath: /home/harness/.hermes
           resources:
             requests:
               memory: "2Gi"
