@@ -17,7 +17,6 @@ RUN apt-get update && \
         jq \
         openssh-client \
         ripgrep \
-        sudo \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
@@ -28,9 +27,7 @@ RUN apt-get update && \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && apt-get purge -y --auto-remove gnupg \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -s /bin/bash harness \
-    && echo 'harness ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt, /usr/bin/dpkg' > /etc/sudoers.d/harness \
-    && chmod 0440 /etc/sudoers.d/harness
+    && useradd -m -s /bin/bash harness
 
 # Download, verify checksum, and install gh
 RUN set -eux && \
