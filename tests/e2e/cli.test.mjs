@@ -192,7 +192,7 @@ test("HARNESS_IMAGE_TAG short-circuits cosign verification", () => {
   assert.ok(args, "expected DOCKER_INVOKED line");
   // image is the last positional before container cmd; for pi it's REGISTRY:test-tag
   assert.ok(
-    args.some((a) => a === "ghcr.io/capotej/harness:test-tag"),
+    args.some((a) => a === "ghcr.io/boldblackai/harness:test-tag"),
     `expected pi image in args: ${args.join(" ")}`,
   );
 });
@@ -340,7 +340,7 @@ test("opencode: image tag is `opencode-<version>`", () => {
   assert.equal(r.status, 0, r.stderr);
   const a = dockerArgs(r.stdout);
   assert.ok(
-    a.some((s) => s === "ghcr.io/capotej/harness:opencode-test-tag"),
+    a.some((s) => s === "ghcr.io/boldblackai/harness:opencode-test-tag"),
     `expected opencode image: ${a.join(" ")}`,
   );
 });
@@ -384,7 +384,7 @@ test("opencode: --model is passed via OPENCODE_MODEL env, not CLI", () => {
   // container cmd is just `opencode run noop`
   const cmdIdx = a.indexOf(
     "opencode",
-    a.indexOf("ghcr.io/capotej/harness:opencode-test-tag"),
+    a.indexOf("ghcr.io/boldblackai/harness:opencode-test-tag"),
   );
   assert.deepEqual(a.slice(cmdIdx, cmdIdx + 3), ["opencode", "run", "noop"]);
 });
@@ -1745,9 +1745,9 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
 
 test("image tag mapping: pi gets bare tag, opencode/hermes get adapter-prefixed tags", () => {
   // getImage() at src/harness.ts has an asymmetric rule:
-  //   pi       -> ghcr.io/capotej/harness:<TAG>
-  //   opencode -> ghcr.io/capotej/harness:opencode-<TAG>
-  //   hermes   -> ghcr.io/capotej/harness:hermes-<TAG>
+  //   pi       -> ghcr.io/boldblackai/harness:<TAG>
+  //   opencode -> ghcr.io/boldblackai/harness:opencode-<TAG>
+  //   hermes   -> ghcr.io/boldblackai/harness:hermes-<TAG>
   //
   // The existing test at line 309 (`opencode: image tag is "opencode-<version>"`)
   // only covers the opencode prefix path. Lock the **full mapping** here so
@@ -1767,14 +1767,14 @@ test("image tag mapping: pi gets bare tag, opencode/hermes get adapter-prefixed 
     assert.equal(r.status, 0, r.stderr);
     const a = dockerArgs(r.stdout);
     assert.ok(a, `expected DOCKER_INVOKED line for ${agent}`);
-    const expectedImage = `ghcr.io/capotej/harness:${expectedTag}`;
+    const expectedImage = `ghcr.io/boldblackai/harness:${expectedTag}`;
     assert.ok(
       a.includes(expectedImage),
       `expected image '${expectedImage}' for agent '${agent}' in: ${a.join(" ")}`,
     );
     // Negative: the pi-prefixed form must NEVER appear.
     assert.equal(
-      a.some((arg) => arg.startsWith("ghcr.io/capotej/harness:pi-")),
+      a.some((arg) => arg.startsWith("ghcr.io/boldblackai/harness:pi-")),
       false,
       `pi must never get a 'pi-' prefix; got: ${a.join(" ")}`,
     );
@@ -1796,7 +1796,7 @@ test("default agent (no -a/--agent) is pi and image tag has no adapter prefix", 
   const a = dockerArgs(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   // Image must be the bare-tag form, not opencode-* or hermes-*.
-  const image = a.find((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  const image = a.find((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
   assert.ok(image, `expected image arg in: ${a.join(" ")}`);
   assert.ok(
     !/opencode-|hermes-/.test(image),
@@ -1820,8 +1820,8 @@ test("-a short alias selects the agent (parity with --agent)", () => {
   const aLong = dockerArgs(rLong.stdout);
   // Both must produce the same hermes-prefixed image and same container
   // command shape (slice from "hermes" forward).
-  const imgShort = aShort.find((x) => x.startsWith("ghcr.io/capotej/harness:"));
-  const imgLong = aLong.find((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  const imgShort = aShort.find((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
+  const imgLong = aLong.find((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
   assert.equal(
     imgShort,
     imgLong,
@@ -1918,7 +1918,7 @@ test("image arg immediately precedes the container command", () => {
   assert.equal(r.status, 0, r.stderr);
   const a = dockerArgs(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
-  const imgIdx = a.findIndex((x) => x.startsWith("ghcr.io/capotej/harness:"));
+  const imgIdx = a.findIndex((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
   assert.notEqual(imgIdx, -1, "expected an image arg");
   // The token immediately after the image must be the agent binary
   // (start of the adapter's container command).

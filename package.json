@@ -1,5 +1,5 @@
 {
-  "name": "@capotej/harness",
+  "name": "@boldblackai/harness",
   "version": "1.8.4",
   "description": "Portable environment for running coding agents in a container",
   "bin": {
@@ -8,7 +8,7 @@
   "files": ["bin/"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/capotej/harness.git"
+    "url": "git+https://github.com/boldblackai/harness.git"
   },
   "packageManager": "pnpm@10.33.2",
   "license": "MIT",

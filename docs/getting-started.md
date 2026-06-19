@@ -14,17 +14,17 @@ icon: lucide/rocket
 No installation required. Run directly with `npx`:
 
 ```bash
-npx @capotej/harness
+npx @boldblackai/harness
 ```
 
 Or install globally:
 
 ```bash
-npm install -g @capotej/harness
+npm install -g @boldblackai/harness
 # or
-pnpm add -g @capotej/harness
+pnpm add -g @boldblackai/harness
 # or
-bun add -g @capotej/harness
+bun add -g @boldblackai/harness
 ```
 
 ## Local mode (LM Studio)
@@ -39,7 +39,7 @@ lms get google/gemma-4-e4b
 Run harness:
 
 ```bash
-npx @capotej/harness -p "write a fizzbuzz in Go"
+npx @boldblackai/harness -p "write a fizzbuzz in Go"
 ```
 
 ### Interactive sessions
@@ -47,13 +47,13 @@ npx @capotej/harness -p "write a fizzbuzz in Go"
 Run without `-p` for an interactive session — agent state persists across runs:
 
 ```bash
-npx @capotej/harness
+npx @boldblackai/harness
 ```
 
 ### Pipe input
 
 ```bash
-echo "write me a fizzbuzz in Go" | npx @capotej/harness
+echo "write me a fizzbuzz in Go" | npx @boldblackai/harness
 ```
 
 ## Cloud mode
@@ -62,29 +62,29 @@ Pass an `--env-file` containing your API key to use a cloud provider:
 
 ```bash
 echo "ANTHROPIC_API_KEY=sk-ant-***" > .env
-npx @capotej/harness -e .env -p "add a login endpoint"
+npx @boldblackai/harness -e .env -p "add a login endpoint"
 ```
 
 To pass env vars but stay in local mode, use `--local`:
 
 ```bash
-npx @capotej/harness -e .env --local -p "refactor the auth module"
+npx @boldblackai/harness -e .env --local -p "refactor the auth module"
 ```
 
 ## Common flags
 
 ```bash
 # Choose an agent
-npx @capotej/harness -a opencode -p "write tests"
+npx @boldblackai/harness -a opencode -p "write tests"
 
 # Override the model
-npx @capotej/harness -m anthropic/claude-sonnet-4-5 -p "refactor auth"
+npx @boldblackai/harness -m anthropic/claude-sonnet-4-5 -p "refactor auth"
 
 # Mount a single file instead of the directory
-npx @capotej/harness -f ./script.py -p "add type hints"
+npx @boldblackai/harness -f ./script.py -p "add type hints"
 
 # Skip image verification
-npx @capotej/harness --no-verify -p "quick task"
+npx @boldblackai/harness --no-verify -p "quick task"
 ```
 
 See the full reference at [Configuration](configuration.md).

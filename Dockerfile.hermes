@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ghcr.io/capotej/harness:latest
+ARG BASE_IMAGE=ghcr.io/boldblackai/harness:latest
 ARG UV_DIGEST=sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6
 
 FROM ghcr.io/astral-sh/uv@${UV_DIGEST} AS uv-src

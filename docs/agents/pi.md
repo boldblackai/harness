@@ -11,13 +11,13 @@ icon: lucide/cpu
 Pi defaults to LM Studio with `google/gemma-4-e4b` (16k context is sufficient):
 
 ```bash
-npx @capotej/harness -p "write a fizzbuzz in Go"
+npx @boldblackai/harness -p "write a fizzbuzz in Go"
 ```
 
 You can specify a different local model with `-m`. HuggingFace-style names with slashes work correctly:
 
 ```bash
-npx @capotej/harness -m "qwen/qwen3.5-9b" -p "write a fizzbuzz in Go"
+npx @boldblackai/harness -m "qwen/qwen3.5-9b" -p "write a fizzbuzz in Go"
 ```
 
 ## Cloud mode
@@ -42,13 +42,13 @@ See the [full provider list](https://github.com/badlogic/pi-mono/blob/c779c14e91
 
 ```bash
 # One-shot prompt
-npx @capotej/harness -p "add a login endpoint"
+npx @boldblackai/harness -p "add a login endpoint"
 
 # With a specific model
-npx @capotej/harness -m anthropic/claude-sonnet-4-5 -p "refactor auth"
+npx @boldblackai/harness -m anthropic/claude-sonnet-4-5 -p "refactor auth"
 
 # Interactive session (no -p)
-npx @capotej/harness
+npx @boldblackai/harness
 ```
 
 The `-m` flag is passed directly to pi as `--model`.

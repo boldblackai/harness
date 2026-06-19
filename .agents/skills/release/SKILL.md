@@ -61,11 +61,11 @@ date +%Y-%m-%d
 
 Based on the commits collected, write a 1–3 sentence prose summary of what changed (new features, fixes, notable improvements). For any new user-visible features — especially new CLI flags, options, or agents — include a concrete inline example showing how to use them (e.g. `harness --flag value`). Then include the raw commit list beneath it.
 
-**Dockerfile dependency changes** — Diff `Dockerfile`, `Dockerfile.opencode`, and `Dockerfile.hermes` against the last tag to find any version bumps to installed tools (e.g. `@mariozechner/pi-coding-agent`, `opencode-ai`, `hermes-agent`, `uv`, `pnpm`, `debian`, etc.). If any are found, include a `### Dependency Updates` section listing each change as `- updated <package> from <old> to <new>`.
+**Dockerfile dependency changes** — Diff `Dockerfile`, `Dockerfile.opencode`, and `Dockerfile.hermes` against the last tag to find any version bumps to installed tools (e.g. `@earendil-works/pi-coding-agent`, `opencode-ai`, `hermes-agent`, `uv`, `pnpm`, `debian`, etc.). If any are found, include a `### Dependency Updates` section listing each change as `- updated <package> from <old> to <new>`.
 
 **Upstream release notes for pi, opencode, and hermes-agent** — If any of these three were bumped, fetch the release notes for every version between the old pin (exclusive) and the new pin (inclusive) and include them in a `### Upstream Release Notes` section. Run the fetches in parallel:
 
-- `@mariozechner/pi-coding-agent`: use `npm show @mariozechner/pi-coding-agent versions --json` to enumerate intermediate versions, then `gh release view <tag> --repo badlogic/pi-mono --json tagName,body` for each (tags match npm versions with a `v` prefix, e.g. `v0.70.2`)
+- `@earendil-works/pi-coding-agent`: use `npm show @earendil-works/pi-coding-agent versions --json` to enumerate intermediate versions, then `gh release view <tag> --repo badlogic/pi-mono --json tagName,body` for each (tags match npm versions with a `v` prefix, e.g. `v0.70.2`)
 - `opencode-ai`: `gh release view <tag> --repo sst/opencode --json tagName,body` for each version between old and new (tags are prefixed with `v`)
 - `hermes-agent`: `gh release view <tag> --repo NousResearch/hermes-agent --json tagName,body` for each tag between old and new
 
@@ -74,7 +74,7 @@ Summarize each release in 2–4 bullet points (new features, breaking changes, n
 ```markdown
 ### Upstream Release Notes
 
-#### @mariozechner/pi-coding-agent 0.67.68 → 0.70.2
+#### @earendil-works/pi-coding-agent 0.67.68 → 0.70.2
 
 **v0.68.0** — <2–4 bullet summary>
 **v0.68.1** — <2–4 bullet summary>
@@ -122,10 +122,10 @@ Edit the `version` field directly in `package.json`. Do not use `npm version` �
 
 ## Step 5b: Update hermes image tag in deploy guides
 
-The hermes claw deploy guides pin the upstream image tag (e.g. `ghcr.io/capotej/harness:hermes-1.8.1`). Update every occurrence to match the new `package.json` version. Each guide exists twice — the in-repo copy (`docs/deploying-to-*.md`, linked from README) and the docs-site copy (`docs/deploying/*.md`) — keep both in sync.
+The hermes claw deploy guides pin the upstream image tag (e.g. `ghcr.io/boldblackai/harness:hermes-1.8.1`). Update every occurrence to match the new `package.json` version. Each guide exists twice — the in-repo copy (`docs/deploying-to-*.md`, linked from README) and the docs-site copy (`docs/deploying/*.md`) — keep both in sync.
 
 ```toml
-image = "ghcr.io/capotej/harness:hermes-<new-version>"
+image = "ghcr.io/boldblackai/harness:hermes-<new-version>"
 ```
 
 Search for the pattern `hermes-[0-9]` in these files and replace all occurrences with the new version:
