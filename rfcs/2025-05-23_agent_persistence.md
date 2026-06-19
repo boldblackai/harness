@@ -38,7 +38,7 @@ $XDG_DATA_HOME/harness/                          # root (default: ~/.local/share
     │   └── mise/                                # mounted at /home/harness/.local/share/mise
     └── hermes/
         ├── local/                               # mounted at /home/harness/.hermes-local
-        ├── openrouter/                          # mounted at /home/harness/.hermes
+        ├── openrouter/                          # mounted at /home/harness/.hermes-openrouter
         └── mise/                                # mounted at /home/harness/.local/share/mise
 ```
 
@@ -69,7 +69,7 @@ Each adapter's `persistMounts()` is unchanged. The `hostSubpath` is now resolved
 | Host subpath | Container path | Extra env |
 |-------------|---------------|-----------|
 | `local/` | `/home/harness/.hermes-local` | — |
-| `openrouter/` | `/home/harness/.hermes` | — |
+| `openrouter/` | `/home/harness/.hermes-openrouter` | — |
 | `mise/` | `/home/harness/.local/share/mise` | `MISE_DATA_DIR=/home/harness/.local/share/mise` |
 
 ## Mermaid Diagrams
@@ -173,7 +173,7 @@ graph LR
     subgraph Container ["Container filesystem"]
         direction TB
         C_HE_L["/home/harness/.hermes-local<br/><i>sessions, logs, memories, skills</i>"]
-        C_HE_O["/home/harness/.hermes<br/><i>sessions, logs, memories, skills</i>"]
+        C_HE_O["/home/harness/.hermes-openrouter<br/><i>sessions, logs, memories, skills</i>"]
         MISE_SHARE["/home/harness/.local/share/mise<br/><i>installs, trust, cache</i>"]
     end
 
