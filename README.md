@@ -10,7 +10,7 @@
 Harness conveniently wraps Docker around three open-source coding agents — [`pi`](https://pi.dev/), [`opencode`](https://opencode.ai),
 and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can point one at a directory (or file) without giving it access to your entire machine.
 
-> **Documentation:** [capotej.github.io/harness](https://capotej.github.io/harness/)
+> **Documentation:** [boldblackai.github.io/harness](https://boldblackai.github.io/harness/)
 
 ## Features
 
@@ -21,7 +21,7 @@ and [`hermes`](https://github.com/NousResearch/hermes-agent) — so you can poin
 - **Stateful or one-shot** — interactive runs persist agent state under `$XDG_DATA_HOME/harness/<project>/<agent>/` (defaults to `~/.local/share/harness/`); one-shot prompts (`-p` or piped stdin) stay ephemeral.
 - **User skills** — automatically mounts `~/.agents/skills` and `~/.claude/skills` into the container so agents can discover and use custom skills. Disable with `--no-skills`.
 - **Context files** — automatically mounts `~/.agents/AGENTS.md` and `~/.claude/CLAUDE.md` into the agent's context directory so cross-agent rules apply inside the container. Disable with `--no-context-files` (`-nc`).
-- **Zero install** — `npx @capotej/harness` just works.
+- **Zero install** — `npx @boldblackai/harness` just works.
 
 ## Quickstart
 
@@ -37,7 +37,7 @@ The container is preconfigured to use `gemma-4-e4b` via LM Studio's local API.
 You can also specify a different local model with `-m`. HuggingFace-style names with slashes (e.g. `qwen/qwen3.5-9b`) work correctly in local mode:
 
 ```bash
-npx @capotej/harness -m "qwen/qwen3.5-9b" -p "write a fizzbuzz in Go"
+npx @boldblackai/harness -m "qwen/qwen3.5-9b" -p "write a fizzbuzz in Go"
 ```
 
 ### Using a cloud provider instead
@@ -66,7 +66,7 @@ See the [full list of supported providers](https://github.com/badlogic/pi-mono/b
 
 ```bash
 echo 'OPENROUTER_API_KEY=sk-...' > .env
-npx @capotej/harness -e .env -p "write me a fizzbuzz in Go"
+npx @boldblackai/harness -e .env -p "write me a fizzbuzz in Go"
 ```
 
 That's it. Your current directory is mounted at `/workspace` inside the container and the agent works against it.
@@ -94,36 +94,36 @@ That's it. Your current directory is mounted at `/workspace` inside the containe
 
 ```bash
 # One-shot prompt
-npx @capotej/harness -p "write me a fizzbuzz in Go"
+npx @boldblackai/harness -p "write me a fizzbuzz in Go"
 
 # Pipe via stdin
-echo "write me a fizzbuzz in Go" | npx @capotej/harness
+echo "write me a fizzbuzz in Go" | npx @boldblackai/harness
 
 # Interactive session (no -p, no piped stdin) — state persists under XDG data dir
-npx @capotej/harness
+npx @boldblackai/harness
 
 # Use a cloud provider via env file
-npx @capotej/harness -e .env -p "add a login endpoint"
+npx @boldblackai/harness -e .env -p "add a login endpoint"
 
 # Override the model
-npx @capotej/harness -m anthropic/claude-sonnet-4-5 -p "refactor the auth module"
+npx @boldblackai/harness -m anthropic/claude-sonnet-4-5 -p "refactor the auth module"
 
 # Mount a single file instead of the whole directory
-npx @capotej/harness -f ./script.py -p "add type hints"
+npx @boldblackai/harness -f ./script.py -p "add type hints"
 
 # Switch agents
-npx @capotej/harness -a opencode -p "write me a fizzbuzz in Go"
-npx @capotej/harness -a hermes -e .env -p "add tests"
+npx @boldblackai/harness -a opencode -p "write me a fizzbuzz in Go"
+npx @boldblackai/harness -a hermes -e .env -p "add tests"
 ```
 
 `npx`, `bunx`, and `pnpm dlx` are interchangeable. Or install globally:
 
 ```bash
-npm install -g @capotej/harness
+npm install -g @boldblackai/harness
 # or
-pnpm add -g @capotej/harness
+pnpm add -g @boldblackai/harness
 # or
-bun add -g @capotej/harness
+bun add -g @boldblackai/harness
 ```
 
 ## Agents
@@ -153,14 +153,14 @@ See the [full provider list](https://github.com/badlogic/pi-mono/blob/c779c14e91
 [`opencode`](https://opencode.ai) defaults to LM Studio in local mode. Pass `--env-file` to enter cloud mode — the agent auto-detects the provider from whichever API key is in the file (`ZAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, etc.). The `-m` flag takes a bare model name; the provider prefix is added for you.
 
 ```bash
-npx @capotej/harness -a opencode -e .env -p "refactor the auth module"
-npx @capotej/harness -a opencode -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
+npx @boldblackai/harness -a opencode -e .env -p "refactor the auth module"
+npx @boldblackai/harness -a opencode -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
 ```
 
 To pass env vars but stay in local mode, use `--local`:
 
 ```bash
-npx @capotej/harness -a opencode -e .env --local -p "refactor the auth module"
+npx @boldblackai/harness -a opencode -e .env --local -p "refactor the auth module"
 ```
 
 When using LM Studio locally, set the model's context length to at least 32k tokens.
@@ -170,8 +170,8 @@ When using LM Studio locally, set the model's context length to at least 32k tok
 [`hermes`](https://github.com/NousResearch/hermes-agent) by NousResearch supports many providers. Pass `--env-file` to enter cloud mode — the agent auto-detects the provider from whichever API key is in the file. Use a `provider/model` for `-m`:
 
 ```bash
-npx @capotej/harness -a hermes -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
-npx @capotej/harness -a hermes -e .env -m openrouter/auto -p "add tests"
+npx @boldblackai/harness -a hermes -e .env -m anthropic/claude-sonnet-4-5 -p "add tests"
+npx @boldblackai/harness -a hermes -e .env -m openrouter/auto -p "add tests"
 ```
 
 Common keys: `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, [and others](https://github.com/NousResearch/hermes-agent/blob/main/.env.example). LM Studio context length should be at least 64k tokens.
@@ -200,7 +200,7 @@ brew install cosign
 Verified digests are cached at `~/.cache/harness/cosign-verified.json` so verification only runs once per image. Skip with `--no-verify` (or by setting `HARNESS_IMAGE_TAG`, which implies skip):
 
 ```bash
-npx @capotej/harness --no-verify -p "write me a fizzbuzz in Go"
+npx @boldblackai/harness --no-verify -p "write me a fizzbuzz in Go"
 ```
 
 ### Dependency cooldown
@@ -266,7 +266,7 @@ Link your local checkout globally:
 ```bash
 pnpm link --global
 # unlink with:
-pnpm unlink --global @capotej/harness
+pnpm unlink --global @boldblackai/harness
 ```
 
 ### Building the image
@@ -275,7 +275,7 @@ pnpm unlink --global @capotej/harness
 make image
 ```
 
-Builds `ghcr.io/capotej/harness` with Debian stable-slim, Node.js v24, `git`, [`@mariozechner/pi-coding-agent`](https://pi.dev/), [`opencode-ai`](https://opencode.ai), [`hermes-agent`](https://github.com/NousResearch/hermes-agent), `fd`, `ripgrep`, `jq`, and `curl`. The hermes variant also includes the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for connecting to MCP servers, and [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) for local speech-to-text.
+Builds `ghcr.io/boldblackai/harness` with Debian stable-slim, Node.js v24, `git`, [`@earendil-works/pi-coding-agent`](https://pi.dev/), [`opencode-ai`](https://opencode.ai), [`hermes-agent`](https://github.com/NousResearch/hermes-agent), `fd`, `ripgrep`, `jq`, and `curl`. The hermes variant also includes the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for connecting to MCP servers, and [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) for local speech-to-text.
 
 The base image is pinned by manifest-list digest (the OCI image index, not a per-platform manifest) for reproducible multi-arch builds. To bump it:
 

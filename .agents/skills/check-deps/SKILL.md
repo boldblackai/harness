@@ -17,7 +17,7 @@ This project pins eight external dependencies across its Dockerfiles. Check each
 
 | Dep | File | What's pinned | How to find latest |
 |-----|------|--------------|-------------------|
-| `@mariozechner/pi-coding-agent` | `Dockerfile` ~L52 | npm version in `pnpm install -g @mariozechner/pi-coding-agent@<VER>` | `npm show @mariozechner/pi-coding-agent version` |
+| `@earendil-works/pi-coding-agent` | `Dockerfile` ~L56 | npm version in `pnpm install -g @earendil-works/pi-coding-agent@<VER>` | `npm show @earendil-works/pi-coding-agent version` |
 | `opencode-ai` | `Dockerfile.opencode` ~L6 | npm version in `pnpm install -g opencode-ai@<VER>` | `npm show opencode-ai version` |
 | `hermes-agent` | `Dockerfile.hermes` ~L91 | git tag in `--branch <TAG>` | `gh release list --repo NousResearch/hermes-agent --limit 5` |
 | `gh` (GitHub CLI) | `Dockerfile` ~L5 | `ARG GH_VERSION=<VER>` | `gh release list --repo cli/cli --limit 5` |
@@ -37,7 +37,7 @@ This project pins eight external dependencies across its Dockerfiles. Check each
    - pnpm version (pattern: `corepack prepare pnpm@<VER>`)
 
 2. **Fetch latest versions in parallel** — run all version checks at the same time:
-   - npm packages: `npm show @mariozechner/pi-coding-agent version`, `npm show opencode-ai version`, `npm show pnpm version`
+   - npm packages: `npm show @earendil-works/pi-coding-agent version`, `npm show opencode-ai version`, `npm show pnpm version`
    - GitHub releases: `gh release list --repo <owner/repo> --limit 5` for hermes-agent, cli/cli, sigstore/cosign, astral-sh/uv
    - debian: `docker manifest inspect debian:stable-slim 2>/dev/null | python3 -c "import sys,json; m=json.load(sys.stdin); print(m.get('manifests',[{}])[0].get('digest','') if 'manifests' in m else m.get('config',{}).get('digest',''))"` — or simpler: `docker pull debian:stable-slim 2>&1 | grep -E 'Digest:|sha256:'`
 
@@ -45,7 +45,7 @@ This project pins eight external dependencies across its Dockerfiles. Check each
 
 4. **7-day cooldown check (all dependencies)** — Every dependency must be at least 7 days old before recommending an upgrade. Apply this to **all** dependencies, not just hermes-agent:
 
-   - **npm packages** (`@mariozechner/pi-coding-agent`, `opencode-ai`, `pnpm`): Get the publish date with `npm show <package> time` or `npm show <package> --json` and parse the `modified` / `created` field. Compute days since release.
+   - **npm packages** (`@earendil-works/pi-coding-agent`, `opencode-ai`, `pnpm`): Get the publish date with `npm show <package> time` or `npm show <package> --json` and parse the `modified` / `created` field. Compute days since release.
 
    - **GitHub releases** (`gh`, `cosign`, `uv`, `hermes-agent`): Use the publish date from the API response (`published_at` field when using `curl -s https://api.github.com/repos/<owner>/<repo>/releases?per_page=5` or column 4 from `gh release list`). Compute days since release.
 
@@ -72,7 +72,7 @@ This project pins eight external dependencies across its Dockerfiles. Check each
 ```text
 | Dependency                    | Pinned       | Latest       | Status          |
 |-------------------------------|--------------|--------------|-----------------|
-| @mariozechner/pi-coding-agent | 0.67.68      | 0.70.1       | outdated ⬆      |
+| @earendil-works/pi-coding-agent | 0.79.2       | 0.79.7       | up to date      |
 | opencode-ai                   | 1.14.18      | 1.14.18      | up to date      |
 | hermes-agent                  | v2026.4.16   | v2026.4.20   | on cooldown 🕐  |
 | gh                            | 2.91.0       | 2.91.0       | up to date      |

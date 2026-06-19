@@ -74,7 +74,7 @@ Skills mounting applies to all run modes (interactive, one-shot, `--file`). Non-
 
 Four GitHub Actions workflows (`.github/workflows/`):
 
-- **`docker.yml`** — Builds and pushes multi-arch (amd64 + arm64) images to `ghcr.io/capotej/harness` on push to `main` and on release tags. Signs images with cosign and attests SLSA provenance. Builds base first, then opencode and hermes variants in parallel using the base image digest.
+- **`docker.yml`** — Builds and pushes multi-arch (amd64 + arm64) images to `ghcr.io/boldblackai/harness` on push to `main` and on release tags. Signs images with cosign and attests SLSA provenance. Builds base first, then opencode and hermes variants in parallel using the base image digest.
 - **`lint.yml`** — Runs `pnpm lint` on push to `main` and on PRs.
 - **`e2e.yml`** — Runs `pnpm test:e2e` on all branches and PRs. Tests against Node 22 and 24.
 - **`pr-build.yml`** — Builds all three Docker images (base + variants) on PRs using a local registry to catch build failures before merge.

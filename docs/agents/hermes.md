@@ -9,7 +9,7 @@ icon: lucide/bot
 ## Local mode
 
 ```bash
-npx @capotej/harness -a hermes -p "add tests"
+npx @boldblackai/harness -a hermes -p "add tests"
 ```
 
 LM Studio context length should be at least 64k tokens.
@@ -20,8 +20,8 @@ Pass `--env-file` to enter cloud mode — the agent auto-detects the provider fr
 
 ```bash
 echo "ANTHROPIC_API_KEY=sk-ant-***" > .env
-npx @capotej/harness -a hermes -e .env -p "add tests"
-npx @capotej/harness -a hermes -e .env -m openrouter/auto -p "add tests"
+npx @boldblackai/harness -a hermes -e .env -p "add tests"
+npx @boldblackai/harness -a hermes -e .env -m openrouter/auto -p "add tests"
 ```
 
 Common keys: `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`. [See full list](https://github.com/NousResearch/hermes-agent/blob/main/.env.example).

@@ -1,4 +1,4 @@
-REGISTRY := ghcr.io/capotej/harness
+REGISTRY := ghcr.io/boldblackai/harness
 ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 build:

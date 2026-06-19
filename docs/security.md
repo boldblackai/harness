@@ -31,7 +31,7 @@ verification only runs once per image. Skip with `--no-verify` (or by setting
 `HARNESS_IMAGE_TAG`, which implies skip):
 
 ```bash
-npx @capotej/harness --no-verify -p "write a fizzbuzz in Go"
+npx @boldblackai/harness --no-verify -p "write a fizzbuzz in Go"
 ```
 
 ## Dependency cooldown

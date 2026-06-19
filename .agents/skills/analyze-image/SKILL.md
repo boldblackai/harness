@@ -13,12 +13,12 @@ Produces a three-part breakdown of the harness Docker image:
 
 ## Step 1: Determine target image
 
-Default to `ghcr.io/capotej/harness:latest` unless the user specifies a different tag.
+Default to `ghcr.io/boldblackai/harness:latest` unless the user specifies a different tag.
 
 ## Step 2: List all harness image tags
 
 ```bash
-docker images ghcr.io/capotej/harness --format "table {{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+docker images ghcr.io/boldblackai/harness --format "table {{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
 ```
 
 ## Step 3: Per-layer breakdown
