@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-# shellcheck source=entrypoint-common.sh
-source /entrypoint-common.sh
+# Disable in-container self-update notifications (#100).
+export PI_SKIP_VERSION_CHECK=1
+export PI_TELEMETRY=0
 
 seed() {
   [ -d "$1" ] || return 0

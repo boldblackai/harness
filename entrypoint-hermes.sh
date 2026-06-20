@@ -1,9 +1,6 @@
 #!/bin/bash
 set -e
 
-# shellcheck source=entrypoint-common.sh
-source /entrypoint-common.sh
-
 CONFIG="/home/harness/.hermes/config.yaml"
 HERMES_HOME="/home/harness/.hermes"
 

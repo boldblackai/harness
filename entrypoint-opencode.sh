@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-# shellcheck source=entrypoint-common.sh
-source /entrypoint-common.sh
+# Disable in-container self-update notifications (#100).
+export OPENCODE_DISABLE_AUTOUPDATE=true
+export OPENCODE_DISABLE_PRUNE=true
 
 if [ -z "$HARNESS_CLOUD_MODE" ]; then
 	# Local mode: use LM Studio config and default model
