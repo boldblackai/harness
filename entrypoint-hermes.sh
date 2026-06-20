@@ -1,12 +1,16 @@
 #!/bin/bash
 set -e
 
+# Shared env setup (routes git's global config into persisted ~/.config).
+# shellcheck disable=SC1091
+. /etc/harness/setup-env.sh
+
 CONFIG="/home/harness/.hermes/config.yaml"
 HERMES_HOME="/home/harness/.hermes"
 
 # Stamp docker install so Hermes skips in-container update banners (#100).
 mkdir -p "$HERMES_HOME"
-printf '%s\n' docker > "$HERMES_HOME/.install_method"
+printf '%s\n' docker >"$HERMES_HOME/.install_method"
 
 if [ ! -f "$CONFIG" ]; then
 	# First run

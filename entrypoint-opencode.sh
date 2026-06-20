@@ -5,6 +5,10 @@ set -e
 export OPENCODE_DISABLE_AUTOUPDATE=true
 export OPENCODE_DISABLE_PRUNE=true
 
+# Shared env setup (routes git's global config into persisted ~/.config).
+# shellcheck disable=SC1091
+. /etc/harness/setup-env.sh
+
 if [ -z "$HARNESS_CLOUD_MODE" ]; then
 	# Local mode: use LM Studio config and default model
 	export OPENCODE_CONFIG=/etc/opencode/lmstudio.json

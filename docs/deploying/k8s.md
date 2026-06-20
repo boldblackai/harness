@@ -38,7 +38,6 @@ Create `k8sclaw-secrets` with the required keys:
 | `OPENROUTER_API_KEY` | API key for the OpenRouter LLM gateway |
 | `TELEGRAM_BOT_TOKEN` | Token for the Telegram bot interface |
 | `TELEGRAM_ALLOWED_USERS` | Comma-separated Telegram user IDs allowed to interact with the bot |
-| `GH_TOKEN` | GitHub personal access token for API access (e.g., PR management) |
 
 _If you add a <space> before the following command it won't end up in your shell history._
 
@@ -46,14 +45,27 @@ _If you add a <space> before the following command it won't end up in your shell
   kubectl --namespace k8sclaw create secret generic k8sclaw-secrets \
   --from-literal=OPENROUTER_API_KEY="your-openrouter-key" \
   --from-literal=TELEGRAM_BOT_TOKEN="your-telegram-token" \
-  --from-literal=TELEGRAM_ALLOWED_USERS="your-telegram-user-ids" \
-  --from-literal=GH_TOKEN="your-github-token"
+  --from-literal=TELEGRAM_ALLOWED_USERS="your-telegram-user-ids"
 ```
 
 ### 3. Apply the manifests
 
 ```bash
 kubectl apply -f k8sclaw.yaml
+```
+
+## GitHub authentication (`gh` CLI)
+
+To use `gh` (or HTTPS git) from inside the claw, authenticate once — the session persists in `~/.config` (on the PVC's `config` subPath), so it survives pod restarts. See [GitHub authentication](../github.md) for creating a PAT.
+
+`kubectl exec` runs as the pod's `harness` user and forwards stdin with `-i`, so you can pipe the token straight in — no Secret required:
+
+```bash
+# Pipe the PAT directly into the running pod. (Leading space keeps it out of
+# your local shell history.)
+ echo "<your-github-pat>" | \
+  kubectl --namespace k8sclaw exec -i deploy/k8sclaw -- gh auth login --with-token
+kubectl --namespace k8sclaw exec deploy/k8sclaw -- gh auth status
 ```
 
 ## Manifest Reference
@@ -137,11 +149,6 @@ spec:
                 secretKeyRef:
                   name: k8sclaw-secrets
                   key: TELEGRAM_ALLOWED_USERS
-            - name: GH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: k8sclaw-secrets
-                  key: GH_TOKEN
           volumeMounts:
             # One PVC, four subPaths — mirrors what the `harness` CLI
             # bind-mounts so hermes config/sessions, XDG config, and mise

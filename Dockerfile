@@ -75,6 +75,7 @@ RUN set -eux && \
     echo "${EXPECTED}  /usr/local/bin/mise" | sha256sum --check --strict && \
     chmod +x /usr/local/bin/mise
 
+COPY setup-env.sh /etc/harness/setup-env.sh
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
