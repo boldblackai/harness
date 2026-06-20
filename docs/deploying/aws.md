@@ -12,7 +12,7 @@ Two paths are documented:
 | **B. EC2 + Docker + SSM** | Single-VM hobbyist deployment. ~$13/mo on a `t4g.small`, EBS for persistence, SSM Session Manager replaces SSH (no keys, no inbound 22). Simplest possible AWS path. |
 | **C. EKS** | Already running EKS? The [Kubernetes guide](k8s.md) works on EKS unmodified — see [§ EKS](#c-eks) below for the one AWS-specific note. |
 
-As with the other deploy targets, **use the upstream signed image as-is**. Do not build a derived image — see [the fly.io guide's "Customizing the claw" section](fly.md#customizing-the-claw--dont-extend-the-image) for the rationale. AWS-equivalent injection points for both options are covered below.
+As with the other deploy targets, **use the upstream signed image as-is**. Do not build a derived image — see [the fly.io guide's "Customizing the claw" section](fly.md#customizing-the-claw-dont-extend-the-image) for the rationale. AWS-equivalent injection points for both options are covered below.
 
 ## Prerequisites
 
@@ -294,7 +294,7 @@ exit
 
 ### Fargate customization (no derived image)
 
-The fly.io guide's [`[[files]]` injection pattern](fly.md#customizing-the-claw--dont-extend-the-image) translates to two AWS techniques:
+The fly.io guide's [`[[files]]` injection pattern](fly.md#customizing-the-claw-dont-extend-the-image) translates to two AWS techniques:
 
 - **Runtime-mutable files (config, persona, persistent skills)** — seed them once on the EFS volume, then let hermes own them. Either `aws ecs execute-command` into a running task and `cp` them into place, or run a one-off Fargate task with the same EFS mount that drops files into `/etc/harness/hermes-defaults/openrouter/` before the gateway starts. The base image's `entrypoint-hermes.sh` does `cp -rn` from `/etc/harness/hermes-defaults/openrouter/` into the volume on first boot only — same first-boot-only semantics as fly.
 - **Tool wrappers / scripts (refreshed every deploy)** — bake them into a tiny sidecar layer published to ECR `FROM scratch`, mount it via a shared `bind` volume between an `initContainer`-style sidecar (using `dependsOn: { condition: COMPLETE }`) and the hermes container. Or: store them in S3 and `aws s3 sync` them in via a startup hook. Avoid `FROM ghcr.io/boldblackai/harness` — see the fly doc for why.

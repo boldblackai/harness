@@ -4,7 +4,7 @@
 
 **Harness** is a portable containerized environment for running coding agents. See README.md for more project details.
 
-**Documentation website:** Built with [Zensical](https://zensical.org) from `docs/`. Config in `zensical.toml`. Deploys to GitHub Pages via `.github/workflows/docs.yml`. Build locally with `pip install zensical && zensical build --clean`.
+**Documentation website:** Built with [Zensical](https://zensical.org) from `docs/`. Config in `zensical.toml`. Deploys to GitHub Pages via `.github/workflows/docs.yml`, which also runs a build-only check on PRs that touch `docs/`, `zensical.toml`, or the workflow itself (so doc build failures are caught before merge). Build locally with `pip install zensical && zensical build --clean` (CI uses `uv tool install zensical==0.0.43`).
 
 ## Commands
 
@@ -72,12 +72,13 @@ Skills mounting applies to all run modes (interactive, one-shot, `--file`). Non-
 
 ## CI/CD
 
-Four GitHub Actions workflows (`.github/workflows/`):
+The GitHub Actions workflows (`.github/workflows/`):
 
 - **`docker.yml`** — Builds and pushes multi-arch (amd64 + arm64) images to `ghcr.io/boldblackai/harness` on push to `main` and on release tags. Signs images with cosign and attests SLSA provenance. Builds base first, then opencode and hermes variants in parallel using the base image digest.
 - **`lint.yml`** — Runs `pnpm lint` on push to `main` and on PRs.
 - **`e2e.yml`** — Runs `pnpm test:e2e` on all branches and PRs. Tests against Node 22 and 24.
 - **`pr-build.yml`** — Builds all three Docker images (base + variants) on PRs using a local registry to catch build failures before merge.
+- **`docs.yml`** — Builds the Zensical docs site. On push to `main` (and `workflow_dispatch`) it deploys to GitHub Pages; on PRs that touch `docs/`, `zensical.toml`, or the workflow it runs a build-only check (the `build` job) without deploying. The `deploy` job is gated with `if: github.event_name != 'pull_request'` and the Pages artifact upload is skipped on PRs.
 
 Custom composite action: `.github/actions/attest-provenance` for SLSA provenance attestation.
 
