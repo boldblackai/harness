@@ -174,7 +174,9 @@ npx @boldblackai/harness -a hermes -e .env -m anthropic/claude-sonnet-4-5 -p "ad
 npx @boldblackai/harness -a hermes -e .env -m openrouter/auto -p "add tests"
 ```
 
-Common keys: `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, [and others](https://github.com/NousResearch/hermes-agent/blob/main/.env.example). LM Studio context length should be at least 64k tokens.
+Common keys: `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GLM_API_KEY` (Z.AI), [and others](https://github.com/NousResearch/hermes-agent/blob/main/.env.example). LM Studio context length should be at least 64k tokens.
+
+**Multiple API keys in one env file.** With `--env-file`, each agent auto-detects a provider from the keys present. If the file contains keys for more than one provider (e.g. `OPENROUTER_API_KEY` and `GLM_API_KEY`), the agent may not pick the one you expect — `pi` and `opencode` follow their own detection order. For one-shot runs, use a single-provider env file, or select the agent and model explicitly (e.g. `harness -a hermes -e .env -m zai/glm-4.7 -p "..."`).
 
 ## Security model
 
@@ -256,10 +258,13 @@ By default harness runs images with `docker`. On macOS 26 / Apple Silicon you ca
 
 ```bash
 brew install container     # install Apple's container CLI (v1.0.0+)
-export HARNESS_CONTAINER_RUNTIME=apple
 container system start     # one-time: start the container system service
+container system kernel set --recommended --arch arm64   # one-time on Apple Silicon (required before first run)
+export HARNESS_CONTAINER_RUNTIME=apple
 harness -p "write me a fizzbuzz in Go"
 ```
+
+On arm64 Macs, `container system kernel set --recommended` is required — without it the first `harness` run fails with `default kernel not configured for architecture arm64`. See [apple/container](https://github.com/apple/container) for details.
 
 The value is **named, not boolean** (`apple` or `docker`, case-insensitive); any other value is a hard error. harness never auto-detects the runtime — you must opt in. Image verification (cosign + SLSA provenance) works identically under both runtimes; the verified-digest cache is keyed by digest, so a digest verified under one runtime is a cache hit under the other.
 
