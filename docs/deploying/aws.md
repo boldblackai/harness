@@ -38,7 +38,7 @@ export HARNESS_IMAGE=ghcr.io/boldblackai/harness:hermes-1.8.5
 | Component | Resource |
 |---|---|
 | **Compute** | Fargate task (1 vCPU / 2 GiB), single-replica service |
-| **Storage** | EFS file system + access point mounted at `/home/harness/.hermes` |
+| **Storage** | EFS file system with 4 access points — one per persisted path (`.hermes`, `.config`, mise data/state), mirroring what the `harness` CLI bind-mounts |
 | **Secrets** | AWS Secrets Manager → injected as env vars via task definition `secrets[]` |
 | **Logs** | CloudWatch Logs (`/ecs/${CLAW_NAME}`) |
 | **Shell-in** | `aws ecs execute-command` (uses SSM Session Manager) |
@@ -83,13 +83,23 @@ EFS_ID=$(aws efs create-file-system --region "$AWS_REGION" \
   --query 'FileSystemId' --output text)
 
 # Create an access point that maps everything to uid/gid 1000 (the harness user)
-EFS_AP_ID=$(aws efs create-access-point --region "$AWS_REGION" \
-  --file-system-id "$EFS_ID" \
-  --posix-user Uid=1000,Gid=1000 \
-  --root-directory '{"Path":"/hermes-openrouter","CreationInfo":{"OwnerUid":1000,"OwnerGid":1000,"Permissions":"0755"}}' \
-  --query 'AccessPointId' --output text)
+# One EFS, one access point per persisted path. Mirrors what the `harness`
+# CLI bind-mounts so hermes config/sessions, XDG config, and mise tools &
+# trust settings all survive task restarts. Every access point shares $EFS_ID
+# and maps to uid/gid 1000 (the non-root harness user).
+create_ap() {
+  aws efs create-access-point --region "$AWS_REGION" \
+    --file-system-id "$EFS_ID" \
+    --posix-user Uid=1000,Gid=1000 \
+    --root-directory "{\"Path\":\"$1\",\"CreationInfo\":{\"OwnerUid\":1000,\"OwnerGid\":1000,\"Permissions\":\"0755\"}}" \
+    --query 'AccessPointId' --output text
+}
+HERMES_AP=$(create_ap /hermes-openrouter)
+CONFIG_AP=$(create_ap /xdg-config)
+MISE_DATA_AP=$(create_ap /mise-data)
+MISE_STATE_AP=$(create_ap /mise-state)
 
-echo "EFS_ID=$EFS_ID  EFS_AP_ID=$EFS_AP_ID"
+echo "EFS_ID=$EFS_ID  HERMES_AP=$HERMES_AP  CONFIG_AP=$CONFIG_AP  MISE_DATA_AP=$MISE_DATA_AP  MISE_STATE_AP=$MISE_STATE_AP"
 ```
 
 Create a mount target in each subnet your task can run in, and a security group that allows NFS (TCP 2049) from your task's security group. The minimal setup (default VPC, one subnet, one SG used by both EFS and the task):
@@ -163,7 +173,7 @@ aws iam put-role-policy --role-name "${CLAW_NAME}-task" \
 
 ### 5. Register the task definition
 
-Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID>`, `<EFS_AP_ID>`):
+Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID>`, and the four access-point IDs `<HERMES_AP>` / `<CONFIG_AP>` / `<MISE_DATA_AP>` / `<MISE_STATE_AP>` from step 3):
 
 ```json
 {
@@ -194,11 +204,12 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
       { "name": "TELEGRAM_ALLOWED_USERS","valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/TELEGRAM_ALLOWED_USERS" },
       { "name": "GH_TOKEN",              "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/GH_TOKEN" }
     ],
-    "mountPoints": [{
-      "sourceVolume": "hermes-data",
-      "containerPath": "/home/harness/.hermes",
-      "readOnly": false
-    }],
+    "mountPoints": [
+      { "sourceVolume": "hermes-data",       "containerPath": "/home/harness/.hermes",           "readOnly": false },
+      { "sourceVolume": "hermes-config",     "containerPath": "/home/harness/.config",           "readOnly": false },
+      { "sourceVolume": "hermes-mise-data",  "containerPath": "/home/harness/.local/share/mise", "readOnly": false },
+      { "sourceVolume": "hermes-mise-state", "containerPath": "/home/harness/.local/state/mise", "readOnly": false }
+    ],
     "logConfiguration": {
       "logDriver": "awslogs",
       "options": {
@@ -208,14 +219,12 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
       }
     }
   }],
-  "volumes": [{
-    "name": "hermes-data",
-    "efsVolumeConfiguration": {
-      "fileSystemId": "<EFS_ID>",
-      "transitEncryption": "ENABLED",
-      "authorizationConfig": { "accessPointId": "<EFS_AP_ID>", "iam": "DISABLED" }
-    }
-  }]
+  "volumes": [
+    { "name": "hermes-data",       "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<HERMES_AP>",     "iam": "DISABLED" } } },
+    { "name": "hermes-config",     "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<CONFIG_AP>",     "iam": "DISABLED" } } },
+    { "name": "hermes-mise-data",  "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<MISE_DATA_AP>",  "iam": "DISABLED" } } },
+    { "name": "hermes-mise-state", "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<MISE_STATE_AP>", "iam": "DISABLED" } } }
+  ]
 }
 ```
 
@@ -282,7 +291,10 @@ aws ecs delete-service --region "$AWS_REGION" --cluster "${CLAW_NAME}" \
   --service "${CLAW_NAME}" --force
 aws ecs delete-cluster --region "$AWS_REGION" --cluster "${CLAW_NAME}"
 aws efs delete-mount-target --mount-target-id <MT_ID>   # from describe-mount-targets
-aws efs delete-access-point --access-point-id "$EFS_AP_ID"
+aws efs delete-access-point --access-point-id "$HERMES_AP"
+aws efs delete-access-point --access-point-id "$CONFIG_AP"
+aws efs delete-access-point --access-point-id "$MISE_DATA_AP"
+aws efs delete-access-point --access-point-id "$MISE_STATE_AP"
 aws efs delete-file-system --file-system-id "$EFS_ID"
 aws ec2 delete-security-group --group-id "$SG_ID"
 aws logs delete-log-group --region "$AWS_REGION" --log-group-name "/ecs/${CLAW_NAME}"
@@ -309,7 +321,7 @@ The simplest possible AWS deployment: one VM, Docker, an EBS volume for state, a
 | Component | Resource |
 |---|---|
 | **Compute** | EC2 `t4g.small` (ARM64, 2 vCPU / 2 GiB) running Amazon Linux 2023 |
-| **Storage** | 30 GiB gp3 root EBS for the Docker volume (`/var/lib/hermes-claw`) |
+| **Storage** | 30 GiB gp3 root EBS; four bind-mount dirs for claw state (`.hermes`, `.config`, mise data/state) live on it |
 | **Secrets** | AWS Secrets Manager → fetched at boot, written to a Docker `--env-file` |
 | **Shell-in** | `aws ssm start-session --target i-xxx` |
 | **Network** | Default VPC, public IP, **no inbound rules** — outbound only |
@@ -357,11 +369,15 @@ dnf -y install docker
 systemctl enable --now docker
 
 # IMPORTANT: chown to 1000:1000 so the in-container harness user (uid 1000)
-# can write to the bind-mount. Without this, entrypoint-hermes.sh's `cp -rn`
+# can write to the bind-mounts. Without this, entrypoint-hermes.sh's `cp -rn`
 # first-boot seed fails with "Permission denied" and the systemd unit
-# crash-loops.
-mkdir -p /var/lib/hermes-claw
-chown 1000:1000 /var/lib/hermes-claw
+# crash-loops. The four dirs mirror what the `harness` CLI bind-mounts.
+mkdir -p /var/lib/hermes-claw \
+         /var/lib/hermes-claw-config \
+         /var/lib/hermes-claw-mise-data \
+         /var/lib/hermes-claw-mise-state
+chown 1000:1000 /var/lib/hermes-claw /var/lib/hermes-claw-config \
+                /var/lib/hermes-claw-mise-data /var/lib/hermes-claw-mise-state
 
 # Pull secrets into an env file (root-readable only)
 umask 077
@@ -388,6 +404,9 @@ ExecStart=/usr/bin/docker run --rm --name hermes-claw \
   -e HERMES_HOME=/home/harness/.hermes \
   -e HF_HOME=/home/harness/.hermes/.cache/huggingface \
   -v /var/lib/hermes-claw:/home/harness/.hermes \
+  -v /var/lib/hermes-claw-config:/home/harness/.config \
+  -v /var/lib/hermes-claw-mise-data:/home/harness/.local/share/mise \
+  -v /var/lib/hermes-claw-mise-state:/home/harness/.local/state/mise \
   ghcr.io/boldblackai/harness:hermes-1.8.5 \
   hermes gateway
 ExecStop=/usr/bin/docker stop hermes-claw

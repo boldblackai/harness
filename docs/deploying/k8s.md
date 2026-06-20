@@ -10,7 +10,7 @@ long-running "claw" (a persistent agent process) to a K8s cluster using the harn
 | Component | Description |
 |---|---|
 | **Deployment** | Single-replica pod running `ghcr.io/boldblackai/harness:hermes-1.8.5` |
-| **PVC** | 100Gi persistent volume for agent data (`/home/harness/.hermes`) |
+| **PVC** | 100Gi persistent volume for agent state — `.hermes`, `.config`, and mise data/state (mounted via `subPath`) |
 | **PDB** | PodDisruptionBudget ensuring at least 1 pod is available |
 | **Secrets** | API keys sourced from a K8s Secret (`k8sclaw-secrets`) |
 
@@ -143,8 +143,21 @@ spec:
                   name: k8sclaw-secrets
                   key: GH_TOKEN
           volumeMounts:
+            # One PVC, four subPaths — mirrors what the `harness` CLI
+            # bind-mounts so hermes config/sessions, XDG config, and mise
+            # tools & trust settings all survive pod restarts.
             - name: data
               mountPath: /home/harness/.hermes
+              subPath: hermes
+            - name: data
+              mountPath: /home/harness/.config
+              subPath: config
+            - name: data
+              mountPath: /home/harness/.local/share/mise
+              subPath: mise-data
+            - name: data
+              mountPath: /home/harness/.local/state/mise
+              subPath: mise-state
           resources:
             requests:
               memory: "2Gi"
