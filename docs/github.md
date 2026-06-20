@@ -1,5 +1,5 @@
 ---
-icon: lucide/github
+icon: material/github
 ---
 
 # GitHub authentication (`gh` CLI)
