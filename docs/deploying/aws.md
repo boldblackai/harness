@@ -55,7 +55,7 @@ aws logs create-log-group --region "$AWS_REGION" --log-group-name "/ecs/${CLAW_N
 _Prefix each shell command with a single space so the secret value doesn't end up in your shell history._
 
 ```bash
- for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS GH_TOKEN; do
+ for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS; do
    aws secretsmanager create-secret --region "$AWS_REGION" \
      --name "${CLAW_NAME}/${k}" \
      --secret-string "REPLACE_ME"
@@ -67,7 +67,7 @@ Then update each one with the real value:
 ```bash
  aws secretsmanager put-secret-value --region "$AWS_REGION" \
    --secret-id "${CLAW_NAME}/OPENROUTER_API_KEY" --secret-string "your-openrouter-key"
-# repeat for TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS, GH_TOKEN
+# repeat for TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS
 ```
 
 > SSM Parameter Store (`SecureString`) works too if you prefer it over Secrets Manager — just swap `secretsmanager:GetSecretValue` for `ssm:GetParameters` in the execution-role policy and reference the parameter ARN in the task definition.
@@ -201,8 +201,7 @@ Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID
     "secrets": [
       { "name": "OPENROUTER_API_KEY",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/OPENROUTER_API_KEY" },
       { "name": "TELEGRAM_BOT_TOKEN",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/TELEGRAM_BOT_TOKEN" },
-      { "name": "TELEGRAM_ALLOWED_USERS","valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/TELEGRAM_ALLOWED_USERS" },
-      { "name": "GH_TOKEN",              "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/GH_TOKEN" }
+      { "name": "TELEGRAM_ALLOWED_USERS","valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/TELEGRAM_ALLOWED_USERS" }
     ],
     "mountPoints": [
       { "sourceVolume": "hermes-data",       "containerPath": "/home/harness/.hermes",           "readOnly": false },
@@ -275,6 +274,24 @@ aws ecs execute-command --region "$AWS_REGION" \
 
 > **Exec sessions run as root.** `aws ecs execute-command` opens a **root** shell inside the container by default, even though the workload (PID 1) runs as the `harness` user (uid 1000). If you need to verify or debug behavior as the harness user (e.g. confirming a mount is writable from the workload's perspective, not just root's), prefix the command with `runuser -u harness --`. To verify the workload's actual user from outside, use `stat -c %u /proc/1` — checking `id -u` inside the exec session will report root.
 
+### Fargate GitHub authentication
+
+To use `gh` (or HTTPS git) from inside the claw, authenticate once — the session persists in `~/.config` (on EFS), so it survives task restarts. See [GitHub authentication](../github.md) for creating a PAT.
+
+Exec sessions run as **root** (see the note above) while the claw's state is owned by the `harness` user, so run the login through `runuser`:
+
+```bash
+TASK_ARN=$(aws ecs list-tasks --region "$AWS_REGION" --cluster "${CLAW_NAME}" \
+  --query 'taskArns[0]' --output text)
+aws ecs execute-command --region "$AWS_REGION" \
+  --cluster "${CLAW_NAME}" --task "$TASK_ARN" \
+  --container hermes --interactive --command "/bin/bash"
+# inside the root shell, authenticate as the harness user:
+runuser -u harness -- sh -c 'echo "<your-github-pat>" | gh auth login --with-token'
+runuser -u harness -- gh auth status
+exit
+```
+
 ### Fargate customization (no derived image)
 
 The fly.io guide's [`[[files]]` injection pattern](fly.md#customizing-the-claw--dont-extend-the-image) translates to two AWS techniques:
@@ -298,7 +315,7 @@ aws efs delete-access-point --access-point-id "$MISE_STATE_AP"
 aws efs delete-file-system --file-system-id "$EFS_ID"
 aws ec2 delete-security-group --group-id "$SG_ID"
 aws logs delete-log-group --region "$AWS_REGION" --log-group-name "/ecs/${CLAW_NAME}"
-for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS GH_TOKEN; do
+for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS; do
   aws secretsmanager delete-secret --region "$AWS_REGION" \
     --secret-id "${CLAW_NAME}/${k}" --force-delete-without-recovery
 done
@@ -381,7 +398,7 @@ chown 1000:1000 /var/lib/hermes-claw /var/lib/hermes-claw-config \
 
 # Pull secrets into an env file (root-readable only)
 umask 077
-for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS GH_TOKEN; do
+for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS; do
   v=$(aws --region ${AWS_REGION} secretsmanager get-secret-value \
     --secret-id "${CLAW_NAME}/$k" --query SecretString --output text)
   printf '%s=%s\n' "$k" "$v" >> /etc/hermes-claw.env
@@ -455,6 +472,19 @@ aws ssm start-session --region "$AWS_REGION" --target "$INSTANCE_ID"
 # Once inside: check the container
 sudo journalctl -u hermes-claw -f
 sudo docker logs -f hermes-claw
+```
+
+### EC2 GitHub authentication
+
+To use `gh` (or HTTPS git) from inside the claw, authenticate once — the session persists in `~/.config` (on the host bind-mount), so it survives restarts. See [GitHub authentication](../github.md) for creating a PAT.
+
+SSM lands you on the **host** (as root); run the login inside the container as the `harness` user via `docker exec`, piping the token over stdin:
+
+```bash
+aws ssm start-session --region "$AWS_REGION" --target "$INSTANCE_ID"
+# on the host (leading space keeps the PAT out of shell history):
+ echo "<your-github-pat>" | sudo docker exec -i -u harness hermes-claw gh auth login --with-token
+sudo docker exec -u harness hermes-claw gh auth status
 ```
 
 ### EC2 customization

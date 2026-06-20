@@ -74,13 +74,31 @@ fly secrets set OPENROUTER_API_KEY=<your-key> --app my-hermes-agent-claw
 # https://hermes-agent.nousresearch.com/docs/user-guide/messaging/telegram#option-b-manual-configuration
 fly secrets set TELEGRAM_BOT_TOKEN=<your-token> --app my-hermes-agent-claw
 fly secrets set TELEGRAM_ALLOWED_USERS=<your-user-ids> --app my-hermes-agent-claw
-fly secrets set GH_TOKEN=<your-personal-access-token> --app my-hermes-agent-claw
 fly deploy --app my-hermes-agent-claw
 ```
 
-> **GitHub CLI access:** The `GH_TOKEN` secret makes the `gh` CLI available inside the container. Tell the agent to add `terminal.env_passthrough: [GH_TOKEN]` to its `config.yaml` so the token is accessible in the sandbox.
-
 Message the bot via Telegram, or wire it up to a scheduled workflow — see the [daily briefing bot guide](https://hermes-agent.nousresearch.com/docs/guides/daily-briefing-bot) for an example.
+
+## GitHub authentication (`gh` CLI)
+
+To use `gh` (or `git push` / `git pull` over HTTPS) from inside the claw, authenticate once — the session persists in `~/.config` (a mounted volume), so it survives restarts. See [GitHub authentication](../github.md) for creating a PAT.
+
+Fly secrets are the cleanest way to get a token into the running machine without it touching any shell history, so use a throwaway secret: set it, log in, then drop it.
+
+```bash
+# 1. Temporarily expose the PAT to the running machine (triggers a redeploy)
+ fly secrets set GH_PAT=<your-github-pat> --app my-hermes-agent-claw
+
+# 2. Log `gh` in on the running machine. Credentials land in ~/.config/gh
+#    (on the persisted volume), so they survive restarts.
+fly ssh console --app my-hermes-agent-claw \
+  -C 'sh -c "echo $GH_PAT | gh auth login --with-token && gh auth status"'
+
+# 3. Drop the PAT — the persisted gh session is all that's needed.
+fly secrets unset GH_PAT --app my-hermes-agent-claw
+```
+
+> Prefer a quick interactive login? `fly ssh console --app my-hermes-agent-claw` opens a shell on the running machine; run `echo "<your-pat>" | gh auth login --with-token` there.
 
 ## Customizing the claw — *don't* extend the image
 

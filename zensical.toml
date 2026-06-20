@@ -16,12 +16,13 @@ nav = [
     { "pi" = "agents/pi.md" },
     { "opencode" = "agents/opencode.md" },
     { "hermes" = "agents/hermes.md" },
-  ]},
+  ] },
   { "Deploying" = [
     { "fly.io" = "deploying/fly.md" },
     { "Kubernetes" = "deploying/k8s.md" },
     { "AWS" = "deploying/aws.md" },
-  ]},
+  ] },
+  { "GitHub auth" = "github.md" },
   { "Configuration" = "configuration.md" },
   { "Security" = "security.md" },
   { "Persistence" = "persistence.md" },
@@ -87,7 +88,7 @@ pygments_lang_class = true
 [project.markdown_extensions.pymdownx.smartsymbols]
 [project.markdown_extensions.pymdownx.superfences]
 custom_fences = [
-  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
 [project.markdown_extensions.pymdownx.tabbed]
 alternate_style = true
