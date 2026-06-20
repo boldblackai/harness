@@ -1,7 +1,7 @@
 # Container Runtime Selection: Apple `container` Support
 
 **Date:** 2026-06-20
-**Status:** Proposed
+**Status:** Implemented
 
 ## Goal
 
@@ -400,21 +400,108 @@ and the helper is renamed/generalized:
 
 ## Implementation Checklist
 
-- [ ] Add `ContainerRuntime` interface + `DockerRuntime` (verbatim current
+- [x] Add `ContainerRuntime` interface + `DockerRuntime` (verbatim current
       argv) + `AppleContainerRuntime` to `src/harness.ts`.
-- [ ] Add `selectRuntime()` with case-insensitive parsing and unknown-value
+- [x] Add `selectRuntime()` with case-insensitive parsing and unknown-value
       hard error.
-- [ ] Route `inspectLocalImage`, the `verifyImage` pull fallback, and the final
+- [x] Route `inspectLocalImage`, the `verifyImage` pull fallback, and the final
       `spawn` through the selected runtime.
-- [ ] Implement `appleLocalDigest()` JSON parser; rebuild `repo@<digest>`.
-- [ ] Omit seccomp/no-new-privileges on the apple path (no warning); document
+- [x] Implement `appleLocalDigest()` JSON parser; rebuild `repo@<digest>`.
+- [x] Omit seccomp/no-new-privileges on the apple path (no warning); document
       the microVM rationale in `README.md`.
-- [ ] Add the `container --version` prerequisite probe + install hint (apple).
-- [ ] Generalize the e2e shim (`docker`/`container`, `RUNTIME_INVOKED`) without
+- [x] Add the `container --version` prerequisite probe + install hint (apple).
+- [x] Generalize the e2e shim (`docker`/`container`, `RUNTIME_INVOKED`) without
       breaking existing `DOCKER_INVOKED`-based assertions.
-- [ ] Add tests: selection (4 cases + unknown), apple argv shape, no per-run
+- [x] Add tests: selection (4 cases + unknown), apple argv shape, no per-run
       warning noise, missing-binary, shared cosign cache.
-- [ ] Update `USAGE` help text with `HARNESS_CONTAINER_RUNTIME`.
-- [ ] Update `README.md` (env vars) and `AGENTS.md` (Key subsystems) once
+- [x] Update `USAGE` help text with `HARNESS_CONTAINER_RUNTIME`.
+- [x] Update `README.md` (env vars) and `AGENTS.md` (Key subsystems) once
       implemented.
-- [ ] Verify `pnpm test:e2e` and `pnpm test:coverage` (≥80%) pass.
+- [x] Verify `pnpm test:e2e` and `pnpm test:coverage` (≥80%) pass.
+
+## Implementation Notes
+
+Implemented in `src/harness.ts` and `tests/e2e/cli.test.mjs`. The design
+follows the RFC; a few refinements are documented below so future readers
+understand where the shipped code deliberately diverges from the proposal.
+
+### Interface refinements (deviations from the proposed sketch)
+
+- **`inspectImage()` returns `{ exists, digest }`, not `localDigest(): string | null`.**
+  The RFC sketched `localDigest(image): string | null`, but `verifyImage()`
+  depends on distinguishing *"image absent"* (→ pull) from *"image present
+  but no registry digest"* (→ refuse, e.g. a locally-built image). Collapsing
+  both into `null` would silently turn a refuse into a pull and change docker
+  semantics. The shipped method is named `inspectImage(image): { exists:
+  boolean; digest: string | null }` and `verifyImage`'s body is otherwise
+  byte-for-byte unchanged — it just calls `runtime.inspectImage()` and
+  `runtime.pullArgs()` instead of the old hardcoded `docker` calls. The
+  standalone `inspectLocalImage()` function was removed (folded into the
+  runtimes).
+
+- **`RunInput` carries `interactive: boolean`, not pre-built `ttyFlags`/`securityFlags`.**
+  Pre-building tty/security tokens in the caller would require the caller to
+  already know the runtime's tokenization rules (clustered `-it` vs separate
+  `-i -t`; `--cap-drop=ALL` vs `--cap-drop ALL`), defeating the encapsulation
+  the abstraction exists to provide. Each runtime's `runArgs()` now formats
+  its own flags from the semantic `interactive` boolean, so the caller stays
+  runtime-agnostic. The docker argv remains byte-for-byte identical (verified
+  by the existing 97 tests plus a manual smoke test).
+
+- **`supportsSecurityOpts()` was dropped from the interface.** It was redundant
+  with each runtime hardcoding its own flags inside `runArgs()` and would have
+  been dead code (the runtimes aren't exported, so it couldn't be unit-tested).
+  The omission of `--security-opt` on the apple path is instead locked down by
+  the `apple runtime: caps are space-separated and --security-opt is absent`
+  e2e test asserting the final argv.
+
+- **`ensureReady()` added to the interface** (the RFC described the
+  `container --version` probe as a free function "before spawning"). Routing
+  it through the runtime keeps the prerequisite contract co-located with the
+  runtime it gates, and lets it run before both `verifyImage` and the final
+  spawn. `DockerRuntime.ensureReady()` is a no-op (preserving prior behaviour:
+  a missing docker surfaces as a spawn `ENOENT`, exactly as before).
+
+### Apple digest parser
+
+Shipped verbatim from the RFC sketch. The descriptor digest apple/container
+reports at `data[0].configuration.descriptor.digest` is the image-index /
+manifest-list digest, which is what cosign signs for a multi-arch image and
+what docker exposes as `RepoDigest` — so the rebuilt `repo@sha256:<digest>`
+key is identical across runtimes for the same image bytes. The
+`cosign-verified.json` cache needs no schema change.
+
+### Tests
+
+The e2e shim factory was generalized to `makeRuntimeShim(dir, binaryName,
+marker)` with `makeDockerShim`/`makeContainerShim` thin wrappers; both shims
+are installed in `before()` so any test opts into the apple path by setting
+`HARNESS_CONTAINER_RUNTIME=apple`. The arg parser was generalized to
+`runtimeArgs(stdout, marker?)` with `dockerArgs`/`containerArgs` delegating
+(existing `dockerArgs`-based assertions are unchanged — the rename the RFC
+proposed would have churned ~80 call sites for no behavioural gain, so the
+old name is kept as a thin alias).
+
+14 new tests cover: selection (unset/docker/apple/case-insensitive/unknown),
+apple argv shape (non-interactive `-i`-only and interactive PTY `-i -t`
+separately, space-separated caps, no `--security-opt`), no per-run warning
+noise, the missing-binary install hint, and the runtime-agnostic cosign
+cache. The cache tests use "smart" inspect shims that return a fixed
+descriptor digest plus a seeded `cosign-verified.json`, then assert neither
+runtime re-pulls or invokes cosign on a cache hit — proving the same
+`repo@sha256:<d>` entry short-circuits verification under both `=apple` and
+`=docker`.
+
+Full suite: **111 tests pass, 100% line/branch/function coverage**
+(threshold is 80%). `pnpm lint` (biome + markdownlint + shellcheck +
+hadolint + actionlint) is green.
+
+### Docs
+
+`README.md` gains a **Container runtime** subsection (under Reference →
+Environment variables) documenting the opt-in, prerequisites (`container
+system start`), the microVM rationale for dropping `--security-opt`, and the
+`:ro`-only volume-option caveat; the Quickstart and Sandbox sections
+ cross-reference it. `AGENTS.md` gains a **Container runtime selection**
+entry under Key subsystems, and the architecture overview's spawn step now
+reads `<runtime> run`.
