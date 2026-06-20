@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.6] - 2026-06-20
+
+### Summary
+
+Fixes zensical documentation build failures and adds a PR docs build check to CI. Improves documentation for git/gh auth configuration persistence (including gh PAT login), documents `.config` and mise data/state persistence in deployment guides, adds `HARNESS_CLOUD_MODE=1` to all deployment guides for cloud mode consistency, and fixes `.hermes-openrouter` references to `.hermes`. Also disables in-container self-update notifications for all agents to reduce noise.
+
+### Changes
+
+- ec7dd17 fix(docs): fix zensical build failure and add PR docs build check (#106)
+- bdafa75 feat: persist git/gh auth config and document gh PAT login (#105)
+- 5c05670 docs: persist .config and mise data/state in deploy guides (#104)
+- c77eef5 fix: disable in-container self-update notifications (#100) (#101)
+- a070a6e docs: add HARNESS_CLOUD_MODE=1 to all deployment guides (#103)
+- 0bec7c2 fix(docs): replace .hermes-openrouter with .hermes (#102)
+
 ## [1.8.5] - 2026-06-19
 
 ### Summary
