@@ -45,6 +45,201 @@ interface PersistMount {
   containerPath: string;
 }
 
+interface LocalImage {
+  exists: boolean;
+  digest: string | null;
+}
+
+/** Semantic inputs to a `run` invocation; each runtime formats its own flags. */
+interface RunInput {
+  interactive: boolean;
+  envFileArgs: string[];
+  envArgs: string[]; // cloud-mode, adapter, mise envs
+  volumeArgs: string[];
+  userVolumeArgs: string[];
+  workdir: string;
+  image: string;
+  containerCmd: string[];
+}
+
+/**
+ * Abstraction over the host container runtime (docker, apple/container, ...).
+ * The rest of harness (adapters, persistence, skills, cosign) is runtime-
+ * agnostic; only image inspection, pulling, and the final `run` argv go
+ * through here. Selection is driven by HARNESS_CONTAINER_RUNTIME.
+ */
+interface ContainerRuntime {
+  /** Binary name on PATH (e.g. "docker", "container"). */
+  binary(): string;
+  /** Token list for the image pull command (without the image, which is appended). */
+  pullArgs(image: string): string[];
+  /** Resolve a local image's existence and its registry digest (repo@sha256:...). */
+  inspectImage(image: string): LocalImage;
+  /** Build the full `run` argv (everything after the binary name). */
+  runArgs(input: RunInput): string[];
+  /** Verify the runtime binary is installed; exit with a hint if not. */
+  ensureReady(): void;
+}
+
+class DockerRuntime implements ContainerRuntime {
+  binary(): string {
+    return "docker";
+  }
+
+  pullArgs(image: string): string[] {
+    return ["pull", image];
+  }
+
+  inspectImage(image: string): LocalImage {
+    try {
+      const out = execFileSync(
+        "docker",
+        [
+          "image",
+          "inspect",
+          "--format",
+          "{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}",
+          image,
+        ],
+        { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
+      )
+        .toString()
+        .trim();
+      return {
+        exists: true,
+        digest: /@sha256:[0-9a-f]{64}$/.test(out) ? out : null,
+      };
+    } catch {
+      return { exists: false, digest: null };
+    }
+  }
+
+  runArgs(input: RunInput): string[] {
+    const ttyFlags = input.interactive ? ["-it"] : ["-i"];
+    return [
+      "run",
+      "--rm",
+      ...ttyFlags,
+      "--cap-drop=ALL",
+      "--cap-add=NET_RAW",
+      "--security-opt",
+      "no-new-privileges:true",
+      "--security-opt",
+      `seccomp=${SECCOMP_PROFILE}`,
+      ...input.envFileArgs,
+      ...input.envArgs,
+      ...input.volumeArgs,
+      ...input.userVolumeArgs,
+      "-w",
+      input.workdir,
+      input.image,
+      ...input.containerCmd,
+    ];
+  }
+
+  ensureReady(): void {
+    // docker is the default; assume present. (A missing docker surfaces as a
+    // clear spawn ENOENT at run time, same as pre-runtime-abstraction behavior.)
+  }
+}
+
+class AppleContainerRuntime implements ContainerRuntime {
+  binary(): string {
+    return "container";
+  }
+
+  pullArgs(image: string): string[] {
+    // apple/container nests pull under the `image` subgroup.
+    return ["image", "pull", image];
+  }
+
+  inspectImage(image: string): LocalImage {
+    let out: string;
+    try {
+      out = execFileSync("container", ["image", "inspect", image], {
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      }).toString();
+    } catch {
+      return { exists: false, digest: null };
+    }
+    // apple/container's `image inspect` always emits a JSON array (no
+    // --format flag). The image-index/manifest-list digest it reports at
+    // data[0].configuration.descriptor.digest is exactly what cosign signs
+    // for a multi-arch image and what docker exposes as the RepoDigest.
+    try {
+      const parsed = JSON.parse(out);
+      const digest = Array.isArray(parsed)
+        ? parsed[0]?.configuration?.descriptor?.digest
+        : null;
+      if (typeof digest === "string" && /^sha256:[0-9a-f]{64}$/.test(digest)) {
+        const repo = image.split(":")[0];
+        return { exists: true, digest: `${repo}@${digest}` };
+      }
+      return { exists: true, digest: null };
+    } catch {
+      return { exists: true, digest: null };
+    }
+  }
+
+  runArgs(input: RunInput): string[] {
+    // apple/container (Swift ArgumentParser) wants -i and -t as separate
+    // tokens (no clustered -it) and space-separated capability values (no
+    // `=` join). It has no --security-opt at all: each workload is a microVM
+    // with its own guest kernel, so the block-af-alg seccomp profile's
+    // host-kernel role is subsumed by the VM boundary and no-new-privileges
+    // is only a minor in-guest defense-in-depth loss. Capability
+    // restrictions ARE supported, so --cap-drop=ALL --cap-add=NET_RAW stays.
+    const ttyFlags = input.interactive ? ["-i", "-t"] : ["-i"];
+    return [
+      "run",
+      "--rm",
+      ...ttyFlags,
+      "--cap-drop",
+      "ALL",
+      "--cap-add",
+      "NET_RAW",
+      ...input.envFileArgs,
+      ...input.envArgs,
+      ...input.volumeArgs,
+      ...input.userVolumeArgs,
+      "-w",
+      input.workdir,
+      input.image,
+      ...input.containerCmd,
+    ];
+  }
+
+  ensureReady(): void {
+    try {
+      execFileSync("container", ["--version"], {
+        stdio: ["ignore", "ignore", "ignore"],
+        timeout: 5000,
+      });
+    } catch {
+      console.error(
+        "harness: HARNESS_CONTAINER_RUNTIME=apple requires the `container` CLI (Apple container, v1.0.0+). Install from https://github.com/apple/container/releases and run `container system start`, or unset HARNESS_CONTAINER_RUNTIME to use docker.",
+      );
+      process.exit(1);
+    }
+  }
+}
+
+function selectRuntime(): ContainerRuntime {
+  const raw = (process.env.HARNESS_CONTAINER_RUNTIME ?? "docker").toLowerCase();
+  switch (raw) {
+    case "docker":
+      return new DockerRuntime();
+    case "apple":
+      return new AppleContainerRuntime();
+    default:
+      console.error(
+        `harness: unknown HARNESS_CONTAINER_RUNTIME="${raw}". Valid values: apple, docker (or unset for docker).`,
+      );
+      process.exit(1);
+  }
+}
+
 interface AgentAdapter {
   buildCommand(options: AgentOptions): string[];
   extraDockerArgs?(options: AgentOptions): string[];
@@ -153,33 +348,6 @@ function cachePath(): string {
   return path.join(base, "harness", "cosign-verified.json");
 }
 
-function inspectLocalImage(image: string): {
-  exists: boolean;
-  digest: string | null;
-} {
-  try {
-    const out = execFileSync(
-      "docker",
-      [
-        "image",
-        "inspect",
-        "--format",
-        "{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}",
-        image,
-      ],
-      { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
-    )
-      .toString()
-      .trim();
-    return {
-      exists: true,
-      digest: /@sha256:[0-9a-f]{64}$/.test(out) ? out : null,
-    };
-  } catch {
-    return { exists: false, digest: null };
-  }
-}
-
 function readCache(): CacheFile {
   try {
     const raw = fs.readFileSync(cachePath(), "utf8");
@@ -222,8 +390,11 @@ function cosign(args: string[]): Promise<void> {
   });
 }
 
-async function verifyImage(image: string): Promise<void> {
-  let { exists, digest: digestRef } = inspectLocalImage(image);
+async function verifyImage(
+  runtime: ContainerRuntime,
+  image: string,
+): Promise<void> {
+  let { exists, digest: digestRef } = runtime.inspectImage(image);
   const cache = readCache();
 
   if (digestRef && cache.verified[digestRef]) {
@@ -235,7 +406,7 @@ async function verifyImage(image: string): Promise<void> {
       `harness: refusing to verify ${image}: image exists locally but has no registry digest (locally-built?).`,
     );
     console.error(
-      "harness: verifying the tag would check registry bytes, not the local image docker would run.",
+      "harness: verifying the tag would check registry bytes, not the local image the runtime would run.",
     );
     console.error(
       "harness: use --no-verify, or set HARNESS_IMAGE_TAG for an implicit skip.",
@@ -246,15 +417,15 @@ async function verifyImage(image: string): Promise<void> {
   if (!digestRef) {
     console.error(`harness: pulling ${image} for verification...`);
     try {
-      execFileSync("docker", ["pull", image], {
+      execFileSync(runtime.binary(), runtime.pullArgs(image), {
         stdio: ["ignore", "inherit", "inherit"],
         timeout: 600000,
       });
     } catch {
-      console.error(`harness: docker pull failed for ${image}`);
+      console.error(`harness: ${runtime.binary()} pull failed for ${image}`);
       process.exit(1);
     }
-    digestRef = inspectLocalImage(image).digest;
+    digestRef = runtime.inspectImage(image).digest;
     if (!digestRef) {
       console.error(
         `harness: failed to resolve digest for ${image} after pull`,
@@ -348,9 +519,10 @@ Options:
   -h, --help             Show this help message
 
 Environment variables:
-  HARNESS_IMAGE_TAG      Override the Docker image tag (defaults to package version)
-  XDG_DATA_HOME         Override the base directory for persistence data (defaults to ~/.local/share)
-  XDG_CACHE_HOME        Override the base directory for cosign cache (defaults to ~/.cache)
+  HARNESS_IMAGE_TAG           Override the Docker image tag (defaults to package version)
+  HARNESS_CONTAINER_RUNTIME   Container runtime to use: docker (default) or apple (Apple container CLI)
+  XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
+  XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
 
 Persistence data is stored at $XDG_DATA_HOME/harness/<project>/<agent>/.
 
@@ -503,6 +675,8 @@ for (const spec of volumeArgList) {
 }
 
 async function run(prompt: string | null): Promise<void> {
+  const runtime = selectRuntime();
+  runtime.ensureReady();
   const image = getImage(agentName);
 
   if (!noVerify) {
@@ -511,7 +685,7 @@ async function run(prompt: string | null): Promise<void> {
         `harness: HARNESS_IMAGE_TAG is set; skipping cosign verification for ${image}`,
       );
     } else {
-      await verifyImage(image);
+      await verifyImage(runtime, image);
     }
   }
 
@@ -530,7 +704,6 @@ async function run(prompt: string | null): Promise<void> {
   const adapterDockerArgs = adapter.extraDockerArgs?.(adapterOptions) ?? [];
 
   const interactive = process.stdin.isTTY;
-  const ttyFlags = interactive ? ["-it"] : ["-i"];
 
   let volumeArgs: string[];
   if (fileArg) {
@@ -629,29 +802,19 @@ async function run(prompt: string | null): Promise<void> {
     );
   }
 
-  const args = [
-    "run",
-    "--rm",
-    ...ttyFlags,
-    "--cap-drop=ALL",
-    "--cap-add=NET_RAW",
-    "--security-opt",
-    "no-new-privileges:true",
-    "--security-opt",
-    `seccomp=${SECCOMP_PROFILE}`,
-    ...envFileArgs,
-    ...cloudModeEnv,
-    ...adapterDockerArgs,
-    ...volumeArgs,
-    ...userVolumeArgs,
-    "-w",
-    "/workspace",
+  const args = runtime.runArgs({
+    interactive,
+    envFileArgs,
+    envArgs: [...cloudModeEnv, ...adapterDockerArgs],
+    volumeArgs,
+    userVolumeArgs,
+    workdir: "/workspace",
     image,
-    ...containerCmd,
-  ];
+    containerCmd,
+  });
 
-  const docker = spawn("docker", args, { stdio: "inherit" });
-  docker.on("exit", (code) => process.exit(code ?? 1));
+  const child = spawn(runtime.binary(), args, { stdio: "inherit" });
+  child.on("exit", (code) => process.exit(code ?? 1));
 }
 
 if (!process.stdin.isTTY && promptArg === null) {
