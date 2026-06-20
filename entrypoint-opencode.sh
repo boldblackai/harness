@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# Disable in-container self-update notifications (#100).
 export OPENCODE_DISABLE_AUTOUPDATE=true
 export OPENCODE_DISABLE_PRUNE=true
 

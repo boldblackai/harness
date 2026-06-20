@@ -58,9 +58,9 @@ The image tag is selected at runtime based on `--agent`: pi uses `<version>`, ot
 
 Skills mounting applies to all run modes (interactive, one-shot, `--file`). Non-existent directories are silently skipped. Disable with `--no-skills`.
 
-**Entrypoints:** Each variant has its own entrypoint that seeds default configs into the agent's home directory and selects local vs cloud mode based on the `HARNESS_CLOUD_MODE` env var:
+**Entrypoints:** Each variant has its own entrypoint that seeds default configs into the agent's home directory and selects local vs cloud mode based on the `HARNESS_CLOUD_MODE` env var. In-container self-update notifications are disabled per agent (#100): pi sets `PI_SKIP_VERSION_CHECK` in `entrypoint.sh`, opencode sets `OPENCODE_DISABLE_AUTOUPDATE` in `entrypoint-opencode.sh`, and hermes stamps `~/.hermes/.install_method` as `docker` in `entrypoint-hermes.sh`.
 
-- `entrypoint.sh` (pi) — seeds pi defaults from `/etc/harness/pi-defaults`
+- `entrypoint.sh` (pi) — seeds pi defaults from `/etc/harness/pi-defaults`; disables pi self-update checks
 - `entrypoint-opencode.sh` — without `HARNESS_CLOUD_MODE`, sets LM Studio config and default model; with `HARNESS_CLOUD_MODE`, does nothing (agent auto-detects from env vars)
 - `entrypoint-hermes.sh` — minimal entrypoint (hermes self-seeds on first run)
 
