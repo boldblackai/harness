@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.9.0] - 2026-06-20
+
+### Summary
+
+Adds support for Apple's native `container` CLI as an alternative container runtime on macOS 26 / Apple Silicon. Set `HARNESS_CONTAINER_RUNTIME=apple` to use it. The apple runtime runs OCI images as lightweight Linux microVMs under Apple's Virtualization framework, providing hardware-assisted isolation. The `--security-opt` flags used under Docker are not applied under the apple runtime (each workload has its own guest kernel, so the seccomp profile's host-kernel role is subsumed by the VM boundary); capability restrictions (`--cap-drop=ALL --cap-add=NET_RAW`) remain enforced. Image verification (cosign + SLSA provenance) works identically under both runtimes.
+
+### Changes
+
+- 6adb030 feat: implement HARNESS_CONTAINER_RUNTIME for apple/container support (#108)
+- 4a1e56b rfc: HARNESS_CONTAINER_RUNTIME for apple/container support (#107)
+
 ## [1.8.6] - 2026-06-20
 
 ### Summary
