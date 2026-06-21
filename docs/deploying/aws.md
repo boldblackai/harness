@@ -296,7 +296,7 @@ exit
 
 The fly.io guide's [`[[files]]` injection pattern](fly.md#customizing-the-claw-dont-extend-the-image) translates to two AWS techniques:
 
-- **Runtime-mutable files (config, persona, persistent skills)** — seed them once on the EFS volume, then let hermes own them. Either `aws ecs execute-command` into a running task and `cp` them into place, or run a one-off Fargate task with the same EFS mount that drops files into `/etc/harness/hermes-defaults/openrouter/` before the gateway starts. The base image's `entrypoint-hermes.sh` does `cp -rn` from `/etc/harness/hermes-defaults/openrouter/` into the volume on first boot only — same first-boot-only semantics as fly.
+- **Runtime-mutable files (config, persona, persistent skills)** — seed them once on the EFS volume, then let hermes own them. `aws ecs execute-command` into a running task and `cp` files directly into the volume path (e.g. `~/.hermes/`). The entrypoint only seeds a minimal `config.yaml` from a baked-in template on first run in local mode; there is no bulk `cp -rn` seed mechanism, so all other customizations must be placed into the volume manually.
 - **Tool wrappers / scripts (refreshed every deploy)** — bake them into a tiny sidecar layer published to ECR `FROM scratch`, mount it via a shared `bind` volume between an `initContainer`-style sidecar (using `dependsOn: { condition: COMPLETE }`) and the hermes container. Or: store them in S3 and `aws s3 sync` them in via a startup hook. Avoid `FROM ghcr.io/boldblackai/harness` — see the fly doc for why.
 
 ### Fargate teardown
@@ -386,9 +386,8 @@ dnf -y install docker
 systemctl enable --now docker
 
 # IMPORTANT: chown to 1000:1000 so the in-container harness user (uid 1000)
-# can write to the bind-mounts. Without this, entrypoint-hermes.sh's `cp -rn`
-# first-boot seed fails with "Permission denied" and the systemd unit
-# crash-loops. The four dirs mirror what the `harness` CLI bind-mounts.
+# can write to the bind-mounts. The four dirs mirror what the
+# `harness` CLI bind-mounts.
 mkdir -p /var/lib/hermes-claw \
          /var/lib/hermes-claw-config \
          /var/lib/hermes-claw-mise-data \
