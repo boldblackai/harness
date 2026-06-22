@@ -86,7 +86,7 @@ Custom composite action: `.github/actions/attest-provenance` for SLSA provenance
 
 ## Tests
 
-E2E tests in `tests/e2e/cli.test.mjs` use a docker shim (a fake `docker` binary that prints `DOCKER_INVOKED <args>`) to exercise the full CLI without requiring Docker. Tests cover:
+E2E tests in `tests/e2e/*.test.mjs` (with shared helpers in `helpers.mjs`) use a docker shim (a fake `docker` binary that prints `DOCKER_INVOKED <args>`) to exercise the full CLI without requiring Docker. Files run in lexicographic order: `adapters → mounts → parsing → persistence → runtime`. Tests cover:
 
 - Argument parsing and validation (`--help`, unknown agent, missing files)
 - Adapter behavior (pi, opencode, hermes command construction)
