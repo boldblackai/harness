@@ -107,33 +107,29 @@ When you want to give the claw extra capabilities (tool wrappers around your API
 1. The fly volume mounts on top of `/home/harness/.hermes`, which silently hides anything you `COPY` into that path on first boot.
 2. Hermes treats `config.yaml` as mutable state — TUI tweaks, model switches, and persona toggles are persisted via `save_config()`. A derived image fights that ownership.
 
-The supported pattern is to use the upstream image **unmodified** and inject your customizations via fly's [`[[files]]`](https://fly.io/docs/reference/configuration/#the-files-section) section. Files at non-volume paths get refreshed on every deploy; files seeded into `/etc/harness/hermes-defaults/openrouter/` get copied into the volume on first boot only (via `entrypoint-hermes.sh`'s `cp -rn`) so hermes' subsequent runtime config edits stick across restarts.
+The supported pattern is to use the upstream image **unmodified** and inject your customizations via fly's [`[[files]]`](https://fly.io/docs/reference/configuration/#the-files-section) section.
 
-Example — add a `crm` API wrapper script and an initial system prompt without building a new image:
+**Tool wrappers and scripts** — use non-volume paths so they're refreshed on every deploy. fly `[[files]]` preserves the local file's exec bit, so your scripts run as-is from the agent's sandbox.
+
+**Config and persona files** — the fly volume mounts over `/home/harness/.hermes`, which hides anything placed there by `[[files]]`. Instead, seed them by SSH'ing in and copying directly into the volume, or set values with `hermes config set`. The entrypoint only seeds a minimal `config.yaml` from a baked-in template on first run in local mode; there is no bulk `cp -rn` seed mechanism.
+
+Example — add a `crm` API wrapper script and seed a system prompt:
 
 ```toml
 # fly.toml — append to the example above
 
 # Tool wrappers — written to a non-volume path. Refreshed on every deploy.
-# fly [[files]] preserves the local file's exec bit, so your scripts run
-# as-is from the agent's sandbox.
 [[files]]
   guest_path = "/etc/myclaw/bin/crm"
   local_path = "bin/crm"
-
-# Initial config + persona. Upstream's hermes entrypoint copies these into
-# the volume on first boot only — after that, hermes owns its config.
-[[files]]
-  guest_path = "/etc/harness/hermes-defaults/openrouter/system-prompt.md"
-  local_path = "config/system-prompt.md"
 ```
 
-To force a refresh of `config.yaml` or `system-prompt.md` from your repo after the first boot, SSH in and delete the volume's copy before redeploying:
-
 ```bash
+# One-time: seed persona into the volume after first deploy
 fly ssh console --app my-hermes-agent-claw \
-  -C 'rm /home/harness/.hermes/system-prompt.md'
-fly deploy --app my-hermes-agent-claw
+  -C 'cat > /home/harness/.hermes/system-prompt.md <<'"'"'EOF'"'"'
+You are a helpful assistant with access to a CRM API.
+EOF'
 ```
 
 The benefits over a derived image:
