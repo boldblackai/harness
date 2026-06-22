@@ -270,7 +270,7 @@ The value is **named, not boolean** (`apple` or `docker`, case-insensitive); any
 
 **Security note.** Under `=apple`, harness does not apply the `--security-opt no-new-privileges` and `--security-opt seccomp=...` flags it uses under docker, because `apple/container` has no `--security-opt` option. This is not a security regression: each apple/container workload is a microVM with its own ephemeral guest kernel (Apple Virtualization framework), so the `block-af-alg.json` profile's host-kernel role — blocking `socket(AF_ALG)` — is subsumed by the VM boundary itself (hardware-assisted isolation, strictly stronger than a syscall filter). Capability restrictions (`--cap-drop=ALL --cap-add=NET_RAW`) **are** supported and stay on. Only `ro`/`readonly` is honored for volume options under the apple path (SELinux relabel flags like `:Z` are meaningless under macOS virtiofs).
 
-**Optional tuning — resource limits.** Apple's container CLI reads defaults from `~/.config/container/config.toml`. Create this file to control CPU and memory allocation for all containers (run `container help config` for the full schema):
+**Optional tuning — resource limits.** Apple's container CLI reads defaults from `~/.config/container/config.toml`. Create this file to control CPU and memory allocation for all containers (see [apple/container](https://github.com/apple/container) for the full schema):
 
 ```toml
 # example values; adjust to your machine
