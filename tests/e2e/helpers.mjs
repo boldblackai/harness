@@ -6,6 +6,10 @@
 //   - process exit code
 //   - stdout/stderr text
 //   - the exact runtime args the CLI produced
+//
+// `node --test tests/e2e/*.test.mjs` runs files in lexicographic order
+// (adapters → mounts → parsing → persistence → runtime). Tests should not
+// rely on cross-file ordering beyond the shared `before()` hook.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
