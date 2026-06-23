@@ -17,12 +17,15 @@ import {
   hasScript,
   makeContainerShim,
   makeDockerShim,
-  normalizeCwd,
   runCli,
   setupIfNecessary,
 } from "./helpers.mjs";
 
 setupIfNecessary();
+
+// ---------------------------------------------------------------------------
+// Runtime selection (auto-detect + HARNESS_CONTAINER_RUNTIME overrides)
+// ---------------------------------------------------------------------------
 
 test("--help documents HARNESS_CONTAINER_RUNTIME", () => {
   const r = runCli(["--help"]);
@@ -34,20 +37,46 @@ test("--help documents HARNESS_CONTAINER_RUNTIME", () => {
   );
 });
 
-test("HARNESS_CONTAINER_RUNTIME unset defaults to docker", () => {
-  const r = runCli(["-p", "noop"], {
-    extraEnv: { HARNESS_CONTAINER_RUNTIME: undefined },
-  });
+test("auto-detect: when both container and docker are on PATH, container is preferred", () => {
+  // SHIM_DIR has both shims; container should win.
+  const r = runCli(["-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(dockerArgs(r.stdout), "expected DOCKER_INVOKED line");
+  assert.ok(containerArgs(r.stdout), "expected CONTAINER_INVOKED line");
   assert.equal(
-    containerArgs(r.stdout),
+    dockerArgs(r.stdout),
     null,
-    "container must NOT be invoked when runtime is unset",
+    "docker must NOT be invoked when container is on PATH",
   );
 });
 
-test("HARNESS_CONTAINER_RUNTIME=docker invokes docker", () => {
+test("auto-detect: when only docker is on PATH, docker is used", () => {
+  const dockerOnlyDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-dockeronly-"),
+  );
+  makeDockerShim(dockerOnlyDir);
+  try {
+    const r = spawnSync("node", [CLI, "-p", "noop"], {
+      cwd: WORK_DIR,
+      env: {
+        ...process.env,
+        PATH: `${dockerOnlyDir}:${process.env.PATH}`,
+        HARNESS_IMAGE_TAG: "test-tag",
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(dockerArgs(r.stdout), "expected DOCKER_INVOKED line");
+    assert.equal(
+      containerArgs(r.stdout),
+      null,
+      "container must NOT be invoked when not on PATH",
+    );
+  } finally {
+    fs.rmSync(dockerOnlyDir, { recursive: true, force: true });
+  }
+});
+
+test("HARNESS_CONTAINER_RUNTIME=docker forces docker even when container is on PATH", () => {
   const r = runCli(["-p", "noop"], {
     extraEnv: { HARNESS_CONTAINER_RUNTIME: "docker" },
   });
@@ -56,34 +85,23 @@ test("HARNESS_CONTAINER_RUNTIME=docker invokes docker", () => {
   assert.equal(containerArgs(r.stdout), null);
 });
 
-test("HARNESS_CONTAINER_RUNTIME=apple invokes container", () => {
+test("HARNESS_CONTAINER_RUNTIME is case-insensitive (Docker)", () => {
   const r = runCli(["-p", "noop"], {
-    extraEnv: { HARNESS_CONTAINER_RUNTIME: "apple" },
-  });
-  assert.equal(r.status, 0, r.stderr);
-  assert.ok(containerArgs(r.stdout), "expected CONTAINER_INVOKED line");
-  assert.equal(
-    dockerArgs(r.stdout),
-    null,
-    "docker must NOT be invoked under the apple runtime",
-  );
-});
-
-test("HARNESS_CONTAINER_RUNTIME is case-insensitive (APPLE, Docker)", () => {
-  const rUpper = runCli(["-p", "noop"], {
-    extraEnv: { HARNESS_CONTAINER_RUNTIME: "APPLE" },
-  });
-  assert.equal(rUpper.status, 0, rUpper.stderr);
-  assert.ok(
-    containerArgs(rUpper.stdout),
-    "APPLE should select the container runtime",
-  );
-
-  const rMixed = runCli(["-p", "noop"], {
     extraEnv: { HARNESS_CONTAINER_RUNTIME: "Docker" },
   });
-  assert.equal(rMixed.status, 0, rMixed.stderr);
-  assert.ok(dockerArgs(rMixed.stdout), "Docker should select docker");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(dockerArgs(r.stdout), "Docker should select docker");
+});
+
+test("HARNESS_CONTAINER_RUNTIME=auto is accepted and auto-detects (same as unset)", () => {
+  const r = runCli(["-p", "noop"], {
+    extraEnv: { HARNESS_CONTAINER_RUNTIME: "auto" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(
+    containerArgs(r.stdout),
+    "auto should prefer container when on PATH",
+  );
 });
 
 test("unknown HARNESS_CONTAINER_RUNTIME exits non-zero with a helpful message and does not spawn", () => {
@@ -110,7 +128,6 @@ test("apple runtime (non-interactive): -i without -t, no clustered -it", () => {
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
-        HARNESS_CONTAINER_RUNTIME: "apple",
       },
       encoding: "utf8",
     });
@@ -146,7 +163,6 @@ test("apple runtime (interactive PTY): -i and -t emitted separately", () => {
         ...process.env,
         PATH: `${SHIM_DIR}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
-        HARNESS_CONTAINER_RUNTIME: "apple",
         HOME: homeDir,
         XDG_DATA_HOME: xdgData,
       },
@@ -170,9 +186,7 @@ test("apple runtime (interactive PTY): -i and -t emitted separately", () => {
 });
 
 test("apple runtime: caps are space-separated and --security-opt is absent", () => {
-  const r = runCli(["-p", "noop"], {
-    extraEnv: { HARNESS_CONTAINER_RUNTIME: "apple" },
-  });
+  const r = runCli(["-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
   const a = containerArgs(r.stdout);
   assert.ok(a, "expected CONTAINER_INVOKED line");
@@ -205,9 +219,7 @@ test("apple runtime: no per-run seccomp/no-new-privileges warning on stderr", ()
   // The omission of --security-opt is intentional and documented, not a
   // regression. Lock that harness does NOT nag the user about it on every
   // apple run.
-  const r = runCli(["-p", "noop"], {
-    extraEnv: { HARNESS_CONTAINER_RUNTIME: "apple" },
-  });
+  const r = runCli(["-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(
     r.stderr,
@@ -219,7 +231,11 @@ test("apple runtime: no per-run seccomp/no-new-privileges warning on stderr", ()
 test("apple runtime: env-file, -e, -v, -w, image, and container cmd match the docker path", () => {
   // Parity: everything EXCEPT tty/cap/security tokenization must be identical
   // between the two runtimes for the same inputs.
-  const dockerR = runCli([
+  const dockerR = runCli(
+    ["-e", ENV_FILE, "-p", "noop", "-v", `${SAMPLE_FILE}:/x`],
+    { extraEnv: { HARNESS_CONTAINER_RUNTIME: "docker" } },
+  );
+  const appleR = runCli([
     "-e",
     ENV_FILE,
     "-p",
@@ -227,12 +243,6 @@ test("apple runtime: env-file, -e, -v, -w, image, and container cmd match the do
     "-v",
     `${SAMPLE_FILE}:/x`,
   ]);
-  const appleR = runCli(
-    ["-e", ENV_FILE, "-p", "noop", "-v", `${SAMPLE_FILE}:/x`],
-    {
-      extraEnv: { HARNESS_CONTAINER_RUNTIME: "apple" },
-    },
-  );
   assert.equal(dockerR.status, 0, dockerR.stderr);
   assert.equal(appleR.status, 0, appleR.stderr);
   const d = dockerArgs(dockerR.stdout);
@@ -266,39 +276,45 @@ test("apple runtime: env-file, -e, -v, -w, image, and container cmd match the do
   assert.deepEqual(d.slice(dImg), c.slice(cImg), "container cmd must match");
 });
 
-// ---- missing runtime binary (apple) ---------------------------------------
+// ---- missing runtime binary (container) -----------------------------------
 
-test("apple runtime with `container` absent from PATH exits with the install hint", () => {
-  // PATH has docker (so the harness process can run node) but NOT container.
-  // The ensureReady() probe must fail fast before any spawn.
-  const dockerOnlyDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "harness-nodocker-"),
+test("auto-detected container binary that fails version probe exits with install hint", () => {
+  // PATH has docker and a broken container binary. The ensureReady() probe
+  // must fail fast before any spawn.
+  const tmpDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "harness-broken-container-"),
   );
-  makeDockerShim(dockerOnlyDir);
+  makeDockerShim(tmpDir);
+  // Create a "container" binary that exists but fails --version
+  const brokenContainer = path.join(tmpDir, "container");
+  fs.writeFileSync(brokenContainer, "#!/usr/bin/env bash\nexit 1\n", {
+    mode: 0o755,
+  });
   try {
     const r = spawnSync("node", [CLI, "-p", "noop"], {
       cwd: WORK_DIR,
       env: {
         ...process.env,
-        PATH: `${dockerOnlyDir}:${process.env.PATH}`,
+        PATH: `${tmpDir}:${process.env.PATH}`,
         HARNESS_IMAGE_TAG: "test-tag",
-        HARNESS_CONTAINER_RUNTIME: "apple",
       },
       encoding: "utf8",
     });
     assert.notEqual(
       r.status,
       0,
-      "should exit non-zero when container is missing",
+      "should exit non-zero when container binary fails version probe",
     );
-    assert.match(r.stderr, /HARNESS_CONTAINER_RUNTIME=apple requires/);
+    assert.match(
+      r.stderr,
+      /auto-detected.*container.*failed the version probe/i,
+    );
     assert.match(r.stderr, /github.com\/apple\/container/);
-    assert.match(r.stderr, /container system start/);
     // No runtime spawn attempted.
     assert.equal(dockerArgs(r.stdout), null);
     assert.equal(containerArgs(r.stdout), null);
   } finally {
-    fs.rmSync(dockerOnlyDir, { recursive: true, force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
@@ -382,7 +398,6 @@ test("apple runtime: seeded cosign cache short-circuits verification (no pull, n
         PATH: `${shimDir}:${process.env.PATH}`,
         // Intentionally NO HARNESS_IMAGE_TAG and NO --no-verify: we want the
         // real verify path, which must hit the seeded cache.
-        HARNESS_CONTAINER_RUNTIME: "apple",
         XDG_CACHE_HOME: cacheHome,
       },
       encoding: "utf8",
