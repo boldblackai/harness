@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Summary
+
+Promotes Apple's `container` CLI as the default container runtime when available. `HARNESS_CONTAINER_RUNTIME=apple` is no longer needed — harness auto-detects whether `container` is on PATH and prefers it over docker. Set `HARNESS_CONTAINER_RUNTIME=docker` to force docker. The `apple` value is no longer accepted.
+
+### Changes
+
+- Promote container CLI to default runtime via auto-detection (#TBD)
+
 ## [1.9.0] - 2026-06-20
 
 ### Summary

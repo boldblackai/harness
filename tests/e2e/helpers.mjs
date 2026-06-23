@@ -96,6 +96,11 @@ export function containerArgs(stdout) {
   return runtimeArgs(stdout, "CONTAINER_INVOKED");
 }
 
+/** Returns the arg list after any *_INVOKED marker (runtime-agnostic). */
+export function runtimeArgsAny(stdout) {
+  return runtimeArgs(stdout);
+}
+
 export function normalizeCwd(cwd, home) {
   let normalized = cwd;
   if (normalized.startsWith(home)) {

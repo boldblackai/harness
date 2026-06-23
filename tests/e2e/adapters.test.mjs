@@ -13,12 +13,12 @@ import {
   SHIM_DIR,
   WORK_DIR,
   containerArgs,
-  dockerArgs,
   hasScript,
   makeContainerShim,
   makeDockerShim,
   normalizeCwd,
   runCli,
+  runtimeArgsAny,
   setupIfNecessary,
 } from "./helpers.mjs";
 
@@ -29,7 +29,7 @@ setupIfNecessary();
 test("pi: prompt is forwarded as `pi -p <prompt>`", () => {
   const r = runCli(["-p", "hello pi"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   // last 3 args should be: <image> pi -p hello pi (joined)
   // We just assert ordering of the agent command at the tail.
   const tail = a.slice(a.indexOf("pi"));
@@ -40,7 +40,7 @@ test("pi: prompt is forwarded as `pi -p <prompt>`", () => {
 test("pi: --model is forwarded with --provider ollama in local mode", () => {
   const r = runCli(["-p", "noop", "-m", "anthropic/claude-sonnet-4-5"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   const idx = a.indexOf("pi");
   assert.notEqual(idx, -1);
   // In local mode (no env file), pi passes --provider ollama alongside --model
@@ -71,7 +71,7 @@ test("pi: --model with --env-file does NOT inject --provider ollama (env mode)",
     "anthropic/claude-sonnet-4-5",
   ]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   const idx = a.indexOf("pi");
   assert.notEqual(idx, -1);
   // pi command tail is exactly: pi -p noop --model <model>
@@ -126,7 +126,7 @@ test("pi: interactive (no -p, no piped stdin) with --model emits 'pi --provider 
   assert.equal(r.status, 0, r.stderr);
   // `script` injects CR characters; strip them before parsing.
   const cleaned = r.stdout.replace(/\r/g, "");
-  const a = dockerArgs(cleaned);
+  const a = runtimeArgsAny(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   const idx = a.indexOf("pi");
   assert.notEqual(idx, -1);
@@ -152,7 +152,7 @@ test("pi: interactive (no -p, no piped stdin) with --model emits 'pi --provider 
 test("opencode: image tag is `opencode-<version>`", () => {
   const r = runCli(["-a", "opencode", "-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(
     a.some((s) => s === "ghcr.io/boldblackai/harness:opencode-test-tag"),
     `expected opencode image: ${a.join(" ")}`,
@@ -165,7 +165,7 @@ test("opencode: --env-file is forwarded (env-file is adapter-agnostic)", () => {
   // is selected), so it MUST work for opencode too. Lock that contract.
   const r = runCli(["-a", "opencode", "-e", ENV_FILE, "-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   const eIdx = a.indexOf("--env-file");
   assert.notEqual(eIdx, -1, `--env-file missing in: ${a.join(" ")}`);
   // Must be the absolute path (path.resolve in run()).
@@ -184,7 +184,7 @@ test("opencode: --model is passed via OPENCODE_MODEL env, not CLI", () => {
     "anthropic/claude-sonnet-4-5",
   ]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   // -e OPENCODE_MODEL=...
   const eIdx = a.findIndex(
     (v, i) => v === "-e" && a[i + 1]?.startsWith("OPENCODE_MODEL="),
@@ -236,7 +236,7 @@ test("hermes: no -m, no -p emits exactly ['hermes','chat'] (no stray flags)", ()
   );
   assert.equal(r.status, 0, r.stderr);
   const cleaned = r.stdout.replace(/\r/g, "");
-  const a = dockerArgs(cleaned);
+  const a = runtimeArgsAny(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   const idx = a.indexOf("hermes");
   assert.notEqual(idx, -1);
@@ -254,7 +254,7 @@ test("hermes: model is passed via -m <provider/model>", () => {
     "anthropic/claude-sonnet-4-5",
   ]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   const cmdStart = a.indexOf("hermes");
   assert.notEqual(cmdStart, -1);
   assert.deepEqual(a.slice(cmdStart, cmdStart + 6), [
@@ -273,7 +273,7 @@ test("default agent (no -a/--agent) is pi and image tag has no adapter prefix", 
   // mapping when -a is explicit; this covers the *default* (no flag) path.
   const r = runCli(["-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   // Image must be the bare-tag form, not opencode-* or hermes-*.
   const image = a.find((x) => x.startsWith("ghcr.io/boldblackai/harness:"));
@@ -296,8 +296,8 @@ test("-a short alias selects the agent (parity with --agent)", () => {
   const rLong = runCli(["--agent", "hermes", "-p", "noop"]);
   assert.equal(rShort.status, 0, rShort.stderr);
   assert.equal(rLong.status, 0, rLong.stderr);
-  const aShort = dockerArgs(rShort.stdout);
-  const aLong = dockerArgs(rLong.stdout);
+  const aShort = runtimeArgsAny(rShort.stdout);
+  const aLong = runtimeArgsAny(rLong.stdout);
   // Both must produce the same hermes-prefixed image and same container
   // command shape (slice from "hermes" forward).
   const imgShort = aShort.find((x) =>
@@ -326,7 +326,7 @@ test("--agent=hermes (equals form) selects the agent", () => {
   // common in shell pipelines and CI configs. Lock it.
   const r = runCli(["--agent=hermes", "-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   const idx = a.indexOf("hermes");
   assert.notEqual(idx, -1, `expected 'hermes' in: ${a.join(" ")}`);
@@ -343,7 +343,7 @@ test("opencode: prompt is forwarded as `opencode run <prompt>`", () => {
   // No prior test asserts the `run` subcommand position. Lock it.
   const r = runCli(["-a", "opencode", "-p", "summarize"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   const idx = a.indexOf("opencode");
   assert.notEqual(idx, -1);
@@ -376,7 +376,7 @@ test("piped stdin uses -i flag (no -t, no combined -it)", () => {
       encoding: "utf8",
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(a.includes("-i"), `expected -i in: ${a.join(" ")}`);
     assert.ok(
@@ -400,7 +400,7 @@ test("image arg immediately precedes the container command", () => {
   // regression (docker would treat the binary as the image).
   const r = runCli(["-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   const imgIdx = a.findIndex((x) =>
     x.startsWith("ghcr.io/boldblackai/harness:"),
@@ -432,7 +432,7 @@ test('empty --volumes "" is silently coerced to no-volume (falsy-empty branch)',
   // doesn't silently break script callers.
   const r = runCli(["--volumes", "", "-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   // No malformed empty-suffix mount string was added.
   assert.ok(
@@ -458,7 +458,7 @@ test("--volumes with multi-colon options preserves the full option suffix", () =
     const spec = `${extraDir}:/opt/thing:ro:Z`;
     const r = runCli(["-p", "noop", "--volumes", spec]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // The full suffix `:/opt/thing:ro:Z` must be preserved verbatim.
     assert.ok(

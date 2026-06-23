@@ -13,12 +13,12 @@ import {
   SHIM_DIR,
   WORK_DIR,
   containerArgs,
-  dockerArgs,
   hasScript,
   makeContainerShim,
   makeDockerShim,
   normalizeCwd,
   runCli,
+  runtimeArgsAny,
   setupIfNecessary,
 } from "./helpers.mjs";
 
@@ -45,7 +45,7 @@ test("existing ~/.agents/skills is mounted into the container", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.agents/skills")),
@@ -62,7 +62,7 @@ test("existing ~/.claude/skills is mounted into the container", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.claude/skills")),
@@ -82,7 +82,7 @@ test("--no-skills suppresses all skills mounts", () => {
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
       a.some((arg) => arg.includes("/.agents/skills")),
@@ -105,7 +105,7 @@ test("non-existent skills directories are silently skipped", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
       a.some((arg) => arg.includes("/.agents/skills")),
@@ -130,7 +130,7 @@ test("skills mounts work with --file mode", () => {
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // The file mount and skills mount should both be present.
     assert.ok(
@@ -164,7 +164,7 @@ test("-v short flag works same as --volumes", () => {
   const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-"));
   const r = runCli(["-p", "noop", "-v", `${extraDir}:/mnt/data`]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   assert.ok(
     a.includes(`${extraDir}:/mnt/data`),
@@ -176,7 +176,7 @@ test("--volumes with valid spec passes through as -v to docker", () => {
   const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-"));
   const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/mnt/data`]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   assert.ok(
     a.includes(`${extraDir}:/mnt/data`),
@@ -188,7 +188,7 @@ test("--volumes with absolute host path resolves correctly", () => {
   const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-"));
   const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/opt/thing:ro`]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(
     a.includes(`${extraDir}:/opt/thing:ro`),
     `expected volume with opts in args: ${a.join(" ")}`,
@@ -227,7 +227,7 @@ test("multiple --volumes flags all pass through", () => {
     `${dir2}:/mnt/b`,
   ]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(
     a.includes(`${dir1}:/mnt/a`),
     `expected first volume in args: ${a.join(" ")}`,
@@ -242,7 +242,7 @@ test("--volumes does not break existing workspace mount", () => {
   const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-vol-"));
   const r = runCli(["-p", "noop", "--volumes", `${extraDir}:/mnt/data`]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   // workspace mount must still be present
   assert.ok(
     a.includes(`${WORK_DIR}:/workspace`),
@@ -272,7 +272,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -341,7 +341,7 @@ test("--volumes is forwarded alongside interactive persistence mounts", () => {
     );
 
     const cleaned = r.stdout.replace(/\r/g, "");
-    const a = dockerArgs(cleaned);
+    const a = runtimeArgsAny(cleaned);
     assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
     // persist mount target must be present
     assert.ok(
@@ -375,7 +375,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -419,7 +419,7 @@ test("skills path that is a regular file (not directory) is silently skipped", (
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
 
     // The .agents/skills FILE must NOT be mounted.
@@ -457,7 +457,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -495,7 +495,7 @@ test("--volumes coexists with skills mounts and the workspace mount (no interfer
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
 
     // Workspace mount.
@@ -536,7 +536,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -577,7 +577,7 @@ test("--no-skills and --volumes are independent flags (skills suppressed, user v
       { extraEnv: { HOME: home } },
     );
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
 
     // --no-skills must suppress BOTH skills mounts even though the dirs exist.
@@ -620,7 +620,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -663,7 +663,7 @@ test("--volumes appears after built-in mounts in docker args (last-wins override
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
 
     // Find the index of each mount target's `-v` flag. We look for the
@@ -716,7 +716,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -781,7 +781,7 @@ test("hermes interactive (no --ephemeral) creates persistence dir and mounts", (
 
   // Docker -v mount must target the default hermes home.
   const cleaned = r.stdout.replace(/\r/g, "");
-  const a = dockerArgs(cleaned);
+  const a = runtimeArgsAny(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   assert.ok(
     a.some((arg) => arg.endsWith(":/home/harness/.hermes")),
@@ -806,7 +806,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -847,7 +847,7 @@ test("hermes: prompt is forwarded as `hermes chat -q <prompt>` (NOT -p)", () => 
     "summarize",
   ]);
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
 
   const hermesIdx = a.indexOf("hermes");
@@ -885,7 +885,7 @@ test("--volumes is forwarded alongside --file mode (both mounts present)", () =>
       "noop",
     ]);
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     // file mount must be present
     assert.ok(
@@ -930,7 +930,7 @@ test("image tag mapping: pi gets bare tag, opencode/hermes get adapter-prefixed 
       extraEnv: { HARNESS_IMAGE_TAG: "test-tag" },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, `expected DOCKER_INVOKED line for ${agent}`);
     const expectedImage = `ghcr.io/boldblackai/harness:${expectedTag}`;
     assert.ok(
@@ -974,7 +974,7 @@ test("global ~/.agents/AGENTS.md is mounted to the pi context path", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/AGENTS.md")),
@@ -993,7 +993,7 @@ test("global ~/.agents/AGENTS.md is mounted to the opencode context path", () =>
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) =>
@@ -1014,7 +1014,7 @@ test("global ~/.agents/AGENTS.md is mounted to the hermes context path", () => {
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.hermes/AGENTS.md")),
@@ -1031,7 +1031,7 @@ test("global ~/.claude/CLAUDE.md is mounted to the pi context path", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/CLAUDE.md")),
@@ -1050,7 +1050,7 @@ test("global ~/.claude/CLAUDE.md is mounted to the opencode context path", () =>
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) =>
@@ -1070,7 +1070,7 @@ test("AGENTS.md and CLAUDE.md are both mounted when both exist", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.pi/agent/AGENTS.md")),
@@ -1094,7 +1094,7 @@ test("--no-context-files suppresses all global context file mounts", () => {
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
       a.some((arg) => arg.includes("/AGENTS.md")),
@@ -1118,7 +1118,7 @@ test("-nc short flag suppresses all global context file mounts", () => {
   try {
     const r = runCli(["-nc", "-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
       a.some((arg) => arg.includes("/AGENTS.md") || arg.includes("/CLAUDE.md")),
@@ -1142,7 +1142,7 @@ test("non-existent global context files are silently skipped", () => {
   try {
     const r = runCli(["-p", "noop"], { extraEnv: { HOME: home } });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
       a.some((arg) => arg.includes("/AGENTS.md") || arg.includes("/CLAUDE.md")),
@@ -1162,7 +1162,7 @@ test("global context file mount works with --file mode", () => {
       extraEnv: { HOME: home },
     });
     assert.equal(r.status, 0, r.stderr);
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/workspace/script.py")),
@@ -1218,7 +1218,7 @@ test("interactive (PTY) persists ~/.config at XDG_DATA_HOME/harness/<cwd>/xdg_co
     `XDG_DATA_HOME/harness/${nCwd}/xdg_config should be created interactively`,
   );
   // And the docker args mount it to the container's XDG config home.
-  const a = dockerArgs(r.stdout.replace(/\r/g, ""));
+  const a = runtimeArgsAny(r.stdout.replace(/\r/g, ""));
   assert.ok(a, "expected DOCKER_INVOKED line");
   assert.ok(
     a.some((arg) => arg.endsWith(":/home/harness/.config")),
@@ -1240,7 +1240,7 @@ test("one-shot (-p) is ephemeral: no xdg_config dir, no ~/.config mount", () => 
     false,
     "xdg_config must NOT be created for one-shot (ephemeral) runs",
   );
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, "expected DOCKER_INVOKED line");
   assert.equal(
     a.some((arg) => arg.endsWith(":/home/harness/.config")),
@@ -1271,7 +1271,7 @@ test("opencode interactive keeps both the cwd-level .config and per-agent .confi
     },
   );
   assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout.replace(/\r/g, ""));
+  const a = runtimeArgsAny(r.stdout.replace(/\r/g, ""));
   assert.ok(a, "expected DOCKER_INVOKED line");
   // Cwd-level whole-.config mount (issue #92) ...
   assert.ok(

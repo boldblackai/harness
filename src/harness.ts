@@ -66,7 +66,9 @@ interface RunInput {
  * Abstraction over the host container runtime (docker, apple/container, ...).
  * The rest of harness (adapters, persistence, skills, cosign) is runtime-
  * agnostic; only image inspection, pulling, and the final `run` argv go
- * through here. Selection is driven by HARNESS_CONTAINER_RUNTIME.
+ * through here. By default harness auto-detects the runtime: if Apple's
+ * `container` CLI is on PATH it is preferred, otherwise docker is used.
+ * Set HARNESS_CONTAINER_RUNTIME=docker to force docker.
  */
 interface ContainerRuntime {
   /** Binary name on PATH (e.g. "docker", "container"). */
@@ -138,7 +140,7 @@ class DockerRuntime implements ContainerRuntime {
   }
 
   ensureReady(): void {
-    // docker is the default; assume present. (A missing docker surfaces as a
+    // docker is the fallback; assume present. (A missing docker surfaces as a
     // clear spawn ENOENT at run time, same as pre-runtime-abstraction behavior.)
   }
 }
@@ -218,7 +220,7 @@ class AppleContainerRuntime implements ContainerRuntime {
       });
     } catch {
       console.error(
-        "harness: HARNESS_CONTAINER_RUNTIME=apple requires the `container` CLI (Apple container, v1.0.0+). Install from https://github.com/apple/container/releases and run `container system start`, or unset HARNESS_CONTAINER_RUNTIME to use docker.",
+        "harness: auto-detected `container` CLI but it failed the version probe (Apple container, v1.0.0+). Install from https://github.com/apple/container/releases and run `container system start`, or set HARNESS_CONTAINER_RUNTIME=docker to use docker instead.",
       );
       process.exit(1);
     }
@@ -226,17 +228,35 @@ class AppleContainerRuntime implements ContainerRuntime {
 }
 
 function selectRuntime(): ContainerRuntime {
-  const raw = (process.env.HARNESS_CONTAINER_RUNTIME ?? "docker").toLowerCase();
-  switch (raw) {
-    case "docker":
-      return new DockerRuntime();
-    case "apple":
-      return new AppleContainerRuntime();
-    default:
-      console.error(
-        `harness: unknown HARNESS_CONTAINER_RUNTIME="${raw}". Valid values: apple, docker (or unset for docker).`,
-      );
-      process.exit(1);
+  const raw = (process.env.HARNESS_CONTAINER_RUNTIME ?? "").toLowerCase();
+  if (raw === "docker") {
+    return new DockerRuntime();
+  }
+  if (raw !== "" && raw !== "auto") {
+    console.error(
+      `harness: unknown HARNESS_CONTAINER_RUNTIME="${raw}". Valid values: docker, auto (or unset for auto-detect).`,
+    );
+    process.exit(1);
+  }
+  // Auto-detect: prefer Apple's container CLI if on PATH, fall back to docker.
+  if (whichSync("container")) {
+    return new AppleContainerRuntime();
+  }
+  return new DockerRuntime();
+}
+
+/** Synchronous `which` — returns true if the binary is found on PATH. */
+function whichSync(name: string): boolean {
+  try {
+    const isWindows = process.platform === "win32";
+    const out = execFileSync(isWindows ? "where" : "which", [name], {
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+      encoding: "utf8",
+    }).trim();
+    return out.length > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -520,7 +540,7 @@ Options:
 
 Environment variables:
   HARNESS_IMAGE_TAG           Override the Docker image tag (defaults to package version)
-  HARNESS_CONTAINER_RUNTIME   Container runtime to use: docker (default) or apple (Apple container CLI)
+  HARNESS_CONTAINER_RUNTIME   Container runtime: auto (default, prefers container over docker), docker (force docker)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
 

@@ -13,12 +13,12 @@ import {
   SHIM_DIR,
   WORK_DIR,
   containerArgs,
-  dockerArgs,
   hasScript,
   makeContainerShim,
   makeDockerShim,
   normalizeCwd,
   runCli,
+  runtimeArgsAny,
   setupIfNecessary,
 } from "./helpers.mjs";
 
@@ -79,7 +79,7 @@ test("piped stdin is implicitly ephemeral and forwards prompt", () => {
     false,
     "XDG persist dir should NOT be created for piped stdin",
   );
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   // pi adapter receives the piped prompt via -p
   const idx = a.indexOf("pi");
   assert.notEqual(idx, -1);
@@ -136,7 +136,7 @@ test("interactive (PTY) creates persistence dir at XDG_DATA_HOME/harness/<normal
   );
   // And the docker args must include a -v mount targeting /home/harness/.pi/agent.
   const cleaned = r.stdout.replace(/\r/g, "");
-  const a = dockerArgs(cleaned);
+  const a = runtimeArgsAny(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   const mountTarget = "/home/harness/.pi/agent";
   const hasMount = a.some((arg) => arg.endsWith(`:${mountTarget}`));
@@ -193,7 +193,7 @@ test("--ephemeral overrides interactive PTY: no .harness/ dir, no persist mount"
     "XDG persist dir must NOT be created when --ephemeral is passed",
   );
   const cleaned = r.stdout.replace(/\r/g, "");
-  const a = dockerArgs(cleaned);
+  const a = runtimeArgsAny(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   const mountTarget = "/home/harness/.pi/agent";
   const hasMount = a.some((arg) => arg.endsWith(`:${mountTarget}`));
@@ -244,7 +244,7 @@ test("piped whitespace-only stdin takes no-prompt branch (pi has no -p)", () => 
     false,
     "XDG persist dir must NOT be created for piped whitespace stdin",
   );
-  const a = dockerArgs(r.stdout);
+  const a = runtimeArgsAny(r.stdout);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${r.stdout}`);
   const piIdx = a.indexOf("pi");
   assert.notEqual(piIdx, -1, `expected 'pi' in docker args: ${a.join(" ")}`);
@@ -305,7 +305,7 @@ test("opencode interactive (no --ephemeral) creates all three persistence dirs a
 
   // All three docker -v mounts must target the documented container paths.
   const cleaned = r.stdout.replace(/\r/g, "");
-  const a = dockerArgs(cleaned);
+  const a = runtimeArgsAny(cleaned);
   assert.ok(a, `expected DOCKER_INVOKED line in: ${cleaned}`);
   const targets = [
     "/home/harness/.config/opencode",
@@ -477,7 +477,7 @@ test("interactive mode creates mise dir and mounts it at /home/harness/.local/sh
     );
     // Verify docker mounts
     const cleaned = r.stdout.replace(/\r/g, "");
-    const a = dockerArgs(cleaned);
+    const a = runtimeArgsAny(cleaned);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
       a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
@@ -527,7 +527,7 @@ test("ephemeral mode (-p) does NOT create mise dir or mount", () => {
       false,
       "no persist dirs should exist in ephemeral mode",
     );
-    const a = dockerArgs(r.stdout);
+    const a = runtimeArgsAny(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.equal(
       a.some((arg) => arg.endsWith(":/home/harness/.local/share/mise")),
