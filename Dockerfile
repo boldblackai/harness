@@ -2,7 +2,7 @@ FROM debian:stable-slim@sha256:5012d0517aa0075a7150a45aae67586641e898913b7af3b08
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG GH_VERSION="2.94.0"
+ARG GH_VERSION="2.95.0"
 ARG MISE_VERSION="2026.4.23"
 ARG TARGETARCH
 
