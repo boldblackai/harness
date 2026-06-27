@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.9.1] - 2026-06-27
+
+### Summary
+
+Maintenance release bundling dependency updates and documentation/test improvements. Bumps `gh` to 2.95.0 and `hermes-agent` to v2026.6.19 (Hermes Agent v0.17.0). Removes a fabricated `cp -rn` seed mechanism that was incorrectly documented for the hermes entrypoint, refactors the monolithic e2e test file into focused modules, and adds README documentation for apple/container kernel bootstrap, multi-provider env files, and container runtime resource configuration.
+
+### Dependency Updates
+
+- updated `gh` from `2.94.0` to `2.95.0`
+- updated `hermes-agent` from `v2026.6.5` to `v2026.6.19`
+
+### Upstream Release Notes
+
+#### hermes-agent v2026.6.5 → v2026.6.19
+
+**v2026.6.19** (Hermes Agent v0.17.0, "The Reach Release") —
+- New messaging channels: iMessage via Photon Spectrum (no Mac relay required), the official WhatsApp Business Cloud API (no bridge process), the Raft agent-network gateway, and SimpleX group support.
+- Background/async subagents via `delegate_task(background=true)`, image-to-image editing in `image_generate`, Automation Blueprints, and Cursor's Composer model reachable through an xAI Grok subscription.
+- The `memory` tool gained atomic batch operations; the desktop app expanded substantially (subagent watch-windows, installable VS Code themes, composer model selector); the dashboard gained a full profile builder and a rehauled Skills Hub.
+- The skill curator no longer spends aux-model budget on routine runs (consolidation is now opt-in); dashboard login was hardened; 300+ issues closed plus a security round.
+
+### Changes
+
+- 372b42e chore: bump gh, hermes-agent, debian digest (#115)
+- 6e0d3bc Delete TODO.md
+- eb90c58 fix(docs): remove fabricated cp -rn seed mechanism from hermes entrypoint (#112)
+- 41bf09f refactor: split monolithic e2e test file into focused modules (#111)
+- 7cd7428 docs: add container runtime resource config to README (#109)
+- 907426f docs: document apple/container kernel bootstrap and multi-provider env files (#110)
+
 ## [1.9.0] - 2026-06-20
 
 ### Summary
