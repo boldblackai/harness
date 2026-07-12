@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-RUN pnpm install -g opencode-ai@1.15.10 && \
+RUN pnpm install -g opencode-ai@1.17.13 && \
     cd $(pnpm root -g)/opencode-ai && node postinstall.mjs && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm

@@ -1,8 +1,8 @@
-FROM debian:stable-slim@sha256:5012d0517aa0075a7150a45aae67586641e898913b7af3b08228108565b5f90c
+FROM debian:stable-slim@sha256:2df2bd18394a8ad5a46cf5d77bfca9de0df479d485987330d1ce017c904b00e4
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG GH_VERSION="2.95.0"
+ARG GH_VERSION="2.96.0"
 ARG MISE_VERSION="2026.4.23"
 ARG TARGETARCH
 
@@ -49,8 +49,8 @@ ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PNPM_MINIMUM_RELEASE_AGE=10080
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN corepack enable && corepack prepare pnpm@10.33.2 --activate && \
-    pnpm install -g @earendil-works/pi-coding-agent@0.79.2 && \
+RUN corepack enable && corepack prepare pnpm@10.34.4 --activate && \
+    pnpm install -g @earendil-works/pi-coding-agent@0.80.3 && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm && \
     mkdir -p /etc/harness/pi-defaults && \
