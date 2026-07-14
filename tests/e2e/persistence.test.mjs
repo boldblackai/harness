@@ -367,17 +367,24 @@ test("normalizeCwd: CWD is exactly home dir → uses _home", () => {
   const xdgData = path.join(tmp, "xdg-data");
   fs.mkdirSync(xdgData, { recursive: true });
   try {
-    const r = spawnSync("script", ["-qfec", `node ${CLI}`, "/dev/null"], {
-      cwd: homeDir,
-      env: {
-        ...process.env,
-        PATH: `${SHIM_DIR}:${process.env.PATH}`,
-        HARNESS_IMAGE_TAG: "test-tag",
-        HOME: homeDir,
-        XDG_DATA_HOME: xdgData,
+    // Running from $HOME is gated by the home-directory guard (issue #113);
+    // pass --mount-entire-home to opt in and reach the persistence path that
+    // exercises the _home normalization branch.
+    const r = spawnSync(
+      "script",
+      ["-qfec", `node ${CLI} --mount-entire-home`, "/dev/null"],
+      {
+        cwd: homeDir,
+        env: {
+          ...process.env,
+          PATH: `${SHIM_DIR}:${process.env.PATH}`,
+          HARNESS_IMAGE_TAG: "test-tag",
+          HOME: homeDir,
+          XDG_DATA_HOME: xdgData,
+        },
+        encoding: "utf8",
       },
-      encoding: "utf8",
-    });
+    );
     assert.equal(r.status, 0, r.stderr);
     assert.equal(
       fs.existsSync(path.join(xdgData, "harness", "_home", "pi")),
