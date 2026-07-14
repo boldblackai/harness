@@ -233,3 +233,61 @@ test("docker invocation always includes hardening flags", () => {
   assert.notEqual(wIdx, -1);
   assert.equal(a[wIdx + 1], "/workspace");
 });
+
+// ---- home-directory guard (issue #113) -------------------------------------
+//
+// Running harness from $HOME mounts the entire home dir as /workspace, exposing
+// dotfiles/credentials. We refuse unless --mount-entire-home is passed. Tests
+// force cwd === home by pointing HOME at WORK_DIR (runCli always runs in
+// WORK_DIR, and os.homedir() honors $HOME on POSIX).
+
+test("running from $HOME errors without --mount-entire-home", () => {
+  const r = runCli(["-p", "noop"], { extraEnv: { HOME: WORK_DIR } });
+  assert.notEqual(r.status, 0, "should exit non-zero when cwd is home");
+  assert.match(r.stderr, /home directory/);
+  assert.match(r.stderr, /--mount-entire-home/);
+  // Must bail out before invoking the container runtime.
+  assert.equal(
+    dockerArgs(r.stdout),
+    null,
+    `docker must not be invoked when refusing to run from home: ${r.stdout}`,
+  );
+});
+
+test("--mount-entire-home allows running from $HOME and mounts it", () => {
+  const r = runCli(["--mount-entire-home", "-p", "noop"], {
+    extraEnv: { HOME: WORK_DIR },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /home directory/);
+  // --mount-entire-home must not be reported as an unrecognized flag.
+  assert.doesNotMatch(r.stderr, /unrecognized flag/);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  assert.ok(
+    a.some((arg) => arg === `${WORK_DIR}:/workspace`),
+    `expected home mounted as workspace in: ${a.join(" ")}`,
+  );
+});
+
+test("--file mode from $HOME is allowed (cwd is not mounted)", () => {
+  // In --file mode only the single file is mounted, not the cwd, so the
+  // home-directory footgun doesn't apply and the guard must not fire.
+  const r = runCli(["-f", SAMPLE_FILE, "-p", "noop"], {
+    extraEnv: { HOME: WORK_DIR },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /home directory/);
+  const a = dockerArgs(r.stdout);
+  assert.ok(a, "expected DOCKER_INVOKED line");
+  assert.ok(
+    a.some((arg) => arg.endsWith(":/workspace/script.py")),
+    `expected single-file mount in: ${a.join(" ")}`,
+  );
+});
+
+test("--help documents --mount-entire-home", () => {
+  const r = runCli(["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /--mount-entire-home/);
+});

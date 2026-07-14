@@ -21,6 +21,7 @@ interface Args extends ParsedArgs {
   local: boolean;
   skills?: boolean;
   "context-files"?: boolean;
+  "mount-entire-home"?: boolean;
   "env-file"?: string;
   e?: string;
   file?: string;
@@ -516,6 +517,7 @@ Options:
   --no-context-files     Disable mounting global context files (~/.agents/AGENTS.md, ~/.claude/CLAUDE.md); alias -nc
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
   --local                Force local mode even with -e (use LM Studio / local defaults)
+  --mount-entire-home    Allow running from your home directory (mounts all of $HOME as the workspace)
   -h, --help             Show this help message
 
 Environment variables:
@@ -560,7 +562,7 @@ function getImage(agent: string): string {
 }
 
 const MINIMIST_OPTS = {
-  boolean: ["help", "h", "ephemeral", "local"],
+  boolean: ["help", "h", "ephemeral", "local", "mount-entire-home"],
   string: [
     "env-file",
     "e",
@@ -621,6 +623,7 @@ if (argv.help) {
 const noVerify = argv.verify === false;
 const noSkills = argv.skills === false;
 const noContextFiles = argv["context-files"] === false;
+const mountEntireHome = argv["mount-entire-home"] === true;
 const localMode = argv.local;
 const envFilePath = argv["env-file"] || null;
 const fileArg = argv.file || null;
@@ -653,6 +656,22 @@ if (fileArg && !fs.existsSync(fileArg)) {
 if (fileArg && fs.statSync(fileArg).isDirectory()) {
   console.error(`harness: --file requires a file, not a directory: ${fileArg}`);
   process.exit(1);
+}
+
+// Guard against accidentally mounting the entire home directory as the
+// workspace. Running from $HOME mounts all dotfiles/credentials into the
+// container and gives the agent a noisy, unfocused workspace. Only relevant
+// when the cwd is what gets mounted (not --file mode). --mount-entire-home
+// is the explicit opt-in for the rare case where this is intended.
+if (!fileArg && !mountEntireHome) {
+  const resolvedCwd = fs.realpathSync(workspace);
+  const resolvedHome = fs.realpathSync(os.homedir());
+  if (resolvedCwd === resolvedHome) {
+    console.error(
+      `harness: refusing to run from your home directory (${resolvedHome}).\nThis would mount your entire home into the container, exposing dotfiles and credentials.\nPass --mount-entire-home to proceed, or cd into a project directory first.`,
+    );
+    process.exit(1);
+  }
 }
 
 const volumeArgList: string[] = Array.isArray(argv.volumes)
