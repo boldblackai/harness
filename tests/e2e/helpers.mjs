@@ -108,10 +108,18 @@ export function normalizeCwd(cwd, home) {
   return normalized;
 }
 
-/** Returns true if the `script` command is available (needed for PTY tests). */
+/** Returns true if util-linux `script -qfec` works (needed for PTY tests). */
 export function hasScript() {
+  if (
+    spawnSync("sh", ["-c", "command -v script"], { encoding: "utf8" }).status !==
+    0
+  ) {
+    return false;
+  }
+  // macOS ships bsd `script` without `-f`; CI uses util-linux. Probe the flag
+  // we actually use instead of only checking PATH.
   return (
-    spawnSync("sh", ["-c", "command -v script"], { encoding: "utf8" })
+    spawnSync("script", ["-qfec", "true", "/dev/null"], { encoding: "utf8" })
       .status === 0
   );
 }
