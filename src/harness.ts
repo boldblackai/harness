@@ -243,11 +243,7 @@ class AppleContainerRuntime implements ContainerRuntime {
     }
     if (!appleHostDockerInternalDnsConfigured()) {
       console.error(
-        `harness: ${HOST_DOCKER_INTERNAL} is not configured for Apple's container runtime.\n` +
-          "Local services on the Mac (e.g. LM Studio on :1234) will not be reachable from the container.\n" +
-          "One-time fix (requires administrator):\n" +
-          `  sudo container system dns create ${HOST_DOCKER_INTERNAL} --localhost ${APPLE_HOST_LOCALHOST_IP}\n` +
-          "See https://github.com/apple/container/blob/main/docs/how-to.md#access-a-host-service-from-a-container",
+        `harness: ${HOST_DOCKER_INTERNAL} is not configured for Apple's container runtime.\nLocal services on the Mac (e.g. LM Studio on :1234) will not be reachable from the container.\nOne-time fix (requires administrator):\n  sudo container system dns create ${HOST_DOCKER_INTERNAL} --localhost ${APPLE_HOST_LOCALHOST_IP}\nSee https://github.com/apple/container/blob/main/docs/how-to.md#access-a-host-service-from-a-container`,
       );
     }
   }

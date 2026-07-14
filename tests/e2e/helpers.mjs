@@ -111,8 +111,8 @@ export function normalizeCwd(cwd, home) {
 /** Returns true if util-linux `script -qfec` works (needed for PTY tests). */
 export function hasScript() {
   if (
-    spawnSync("sh", ["-c", "command -v script"], { encoding: "utf8" }).status !==
-    0
+    spawnSync("sh", ["-c", "command -v script"], { encoding: "utf8" })
+      .status !== 0
   ) {
     return false;
   }
