@@ -37,7 +37,10 @@ RUN set -eux && \
         --certificate-identity "keyless@projectsigstore.iam.gserviceaccount.com" \
         --certificate-oidc-issuer "https://accounts.google.com" \
         /tmp/cosign_checksums.txt && \
-    rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt.sigstore.json
+    rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt.sigstore.json && \
+    apt-get update -qq && \
+    apt-get install -y --no-install-recommends snzip && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv-src /uv /usr/local/bin/uv
 
@@ -47,7 +50,8 @@ RUN set -eux && \
         -o /tmp/uv-attestations.json && \
     BUNDLE_URL=$(jq -r '.attestations[0].bundle_url // .attestations[0].bundle' /tmp/uv-attestations.json) && \
     if echo "${BUNDLE_URL}" | grep -q '^https\?://'; then \
-        curl -fsSL "${BUNDLE_URL}" -o /tmp/uv-bundle.json; \
+        curl -fsSL "${BUNDLE_URL}" -o /tmp/uv-bundle.json.sn && \
+        snzip -d -c /tmp/uv-bundle.json.sn > /tmp/uv-bundle.json; \
     else \
         jq -n --arg b "${BUNDLE_URL}" '$b' > /tmp/uv-bundle.json; \
     fi && \
@@ -58,7 +62,7 @@ RUN set -eux && \
         --certificate-identity-regexp "https://github.com/astral-sh/uv/.*" \
         --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
         /usr/local/bin/uv && \
-    rm -f /tmp/uv-attestations.json /tmp/uv-bundle.json
+    rm -f /tmp/uv-attestations.json /tmp/uv-bundle.json /tmp/uv-bundle.json.sn
 
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
