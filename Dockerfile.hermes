@@ -9,9 +9,9 @@ USER root
 
 ARG UV_VERSION=0.11.19
 ARG UV_DIGEST=sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6
-ARG COSIGN_VERSION=3.1.1
-ARG COSIGN_AMD64_SHA256=ae1ecd212663f3693ad9edf8b1a183900c9a52d3155ba6e354237f9a0f6463fc
-ARG COSIGN_ARM64_SHA256=2ec865872e331c32fd12b08dae15332d3f92c0aa029219589684a4903ca85d11
+ARG COSIGN_VERSION=3.0.6
+ARG COSIGN_AMD64_SHA256=c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
+ARG COSIGN_ARM64_SHA256=bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8
 ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -37,23 +37,33 @@ RUN set -eux && \
         --certificate-identity "keyless@projectsigstore.iam.gserviceaccount.com" \
         --certificate-oidc-issuer "https://accounts.google.com" \
         /tmp/cosign_checksums.txt && \
-    rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt.sigstore.json
+    rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt.sigstore.json && \
+    apt-get update -qq && \
+    apt-get install -y --no-install-recommends python3 python3-venv python3-snappy && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=uv-src /uv /usr/local/bin/uv
 
 RUN set -eux && \
     curl -fsSL -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/astral-sh/uv/attestations/${UV_DIGEST}" \
         -o /tmp/uv-attestations.json && \
-    jq '.attestations[0].bundle' /tmp/uv-attestations.json > /tmp/uv-bundle.json && \
+    BUNDLE_URL=$(jq -r '.attestations[0].bundle_url // .attestations[0].bundle' /tmp/uv-attestations.json) && \
+    if echo "${BUNDLE_URL}" | grep -q '^https\?://'; then \
+        curl -fsSL "${BUNDLE_URL}" -o /tmp/uv-bundle.json.sn && \
+        python3 -c "import snappy,sys; sys.stdout.buffer.write(snappy.decompress(open('/tmp/uv-bundle.json.sn','rb').read()))" > /tmp/uv-bundle.json; \
+    else \
+        jq '.attestations[0].bundle' /tmp/uv-attestations.json > /tmp/uv-bundle.json; \
+    fi && \
     cosign verify-blob-attestation \
         --new-bundle-format \
         --bundle /tmp/uv-bundle.json \
         --type slsaprovenance1 \
         --certificate-identity-regexp "https://github.com/astral-sh/uv/.*" \
         --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-        --check-claims=false && \
-    rm -f /tmp/uv-attestations.json /tmp/uv-bundle.json
-
-COPY --from=uv-src /uv /usr/local/bin/uv
+        --check-claims=false \
+        /usr/local/bin/uv && \
+    rm -f /tmp/uv-attestations.json /tmp/uv-bundle.json /tmp/uv-bundle.json.sn
 
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
@@ -84,8 +94,8 @@ RUN set -eux && \
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-dev python3-venv build-essential git libffi-dev libolm-dev \
-    && git clone --depth 1 --branch v2026.6.19 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+        python3-dev build-essential git libffi-dev libolm-dev \
+    && git clone --depth 1 --branch v2026.7.7.2 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python python3 \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
