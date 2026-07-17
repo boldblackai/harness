@@ -39,6 +39,8 @@ RUN set -eux && \
         /tmp/cosign_checksums.txt && \
     rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt.sigstore.json
 
+COPY --from=uv-src /uv /usr/local/bin/uv
+
 RUN set -eux && \
     curl -fsSL -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/astral-sh/uv/attestations/${UV_DIGEST}" \
@@ -50,10 +52,8 @@ RUN set -eux && \
         --type slsaprovenance1 \
         --certificate-identity-regexp "https://github.com/astral-sh/uv/.*" \
         --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-        --check-claims=false && \
+        /usr/local/bin/uv && \
     rm -f /tmp/uv-attestations.json /tmp/uv-bundle.json
-
-COPY --from=uv-src /uv /usr/local/bin/uv
 
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
