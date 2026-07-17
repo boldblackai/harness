@@ -41,10 +41,7 @@ RUN set -eux && \
 
 COPY --from=uv-src /uv /usr/local/bin/uv
 
-RUN set -eux && \
-    gh attestation verify /usr/local/bin/uv \
-        --repo astral-sh/uv \
-        --digest sha256:$(echo "${UV_DIGEST}" | cut -d: -f2)
+RUN gh attestation verify /usr/local/bin/uv --repo astral-sh/uv
 
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
