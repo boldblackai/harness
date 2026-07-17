@@ -53,7 +53,7 @@ RUN set -eux && \
         curl -fsSL "${BUNDLE_URL}" -o /tmp/uv-bundle.json.sn && \
         python3 -c "import snappy,sys; sys.stdout.buffer.write(snappy.decompress(open('/tmp/uv-bundle.json.sn','rb').read()))" > /tmp/uv-bundle.json; \
     else \
-        jq -n --arg b "${BUNDLE_URL}" '$b' > /tmp/uv-bundle.json; \
+        jq '.attestations[0].bundle' /tmp/uv-attestations.json > /tmp/uv-bundle.json; \
     fi && \
     cosign verify-blob-attestation \
         --new-bundle-format \
