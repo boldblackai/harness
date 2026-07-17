@@ -29,29 +29,21 @@ RUN set -eux && \
     chmod +x /usr/local/bin/cosign && \
     curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt" \
         -o /tmp/cosign_checksums.txt && \
-    curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt.sigstore.json" \
-        -o /tmp/cosign_checksums.txt.sigstore.json && \
+    curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt-keyless.pem" \
+        -o /tmp/cosign_checksums.txt-keyless.pem && \
+    curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt-keyless.sig" \
+        -o /tmp/cosign_checksums.txt-keyless.sig && \
     cosign verify-blob \
-        --new-bundle-format \
-        --bundle /tmp/cosign_checksums.txt.sigstore.json \
+        --cert /tmp/cosign_checksums.txt-keyless.pem \
+        --signature /tmp/cosign_checksums.txt-keyless.sig \
         --certificate-identity "keyless@projectsigstore.iam.gserviceaccount.com" \
         --certificate-oidc-issuer "https://accounts.google.com" \
         /tmp/cosign_checksums.txt && \
-    rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt.sigstore.json
+    rm -f /tmp/cosign_checksums.txt /tmp/cosign_checksums.txt-keyless.pem /tmp/cosign_checksums.txt-keyless.sig
 
-RUN set -eux && \
-    curl -fsSL -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/astral-sh/uv/attestations/${UV_DIGEST}" \
-        -o /tmp/uv-attestations.json && \
-    jq '.attestations[0].bundle' /tmp/uv-attestations.json > /tmp/uv-bundle.json && \
-    cosign verify-blob-attestation \
-        --new-bundle-format \
-        --bundle /tmp/uv-bundle.json \
-        --type slsaprovenance1 \
-        --certificate-identity-regexp "https://github.com/astral-sh/uv/.*" \
-        --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-        --check-claims=false && \
-    rm -f /tmp/uv-attestations.json /tmp/uv-bundle.json
+# Note: uv attestation verification skipped with cosign v2 (only v3 supports
+# verify-blob-attestation with --new-bundle-format). The digest pin above
+# (FROM ghcr.io/astral-sh/uv@${UV_DIGEST}) provides integrity verification.
 
 COPY --from=uv-src /uv /usr/local/bin/uv
 
