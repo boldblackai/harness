@@ -11,7 +11,7 @@ image-opencode:
 	docker build --build-arg BASE_IMAGE=$(REGISTRY):latest --build-arg TARGETARCH=$(ARCH) -t $(REGISTRY):opencode-latest -f Dockerfile.opencode .
 
 image-hermes:
-	docker build --secret id=github_token,env=GITHUB_TOKEN --build-arg BASE_IMAGE=$(REGISTRY):latest --build-arg TARGETARCH=$(ARCH) -t $(REGISTRY):hermes-latest -f Dockerfile.hermes .
+	docker build --build-arg BASE_IMAGE=$(REGISTRY):latest --build-arg TARGETARCH=$(ARCH) -t $(REGISTRY):hermes-latest -f Dockerfile.hermes .
 
 image: image-base image-opencode image-hermes
 
