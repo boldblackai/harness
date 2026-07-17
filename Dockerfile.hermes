@@ -122,7 +122,7 @@ RUN apt-get update && \
         libasound2t64 \
         libgbm1 \
         libx11-6 \
-        libxext-6 \
+        libxext6 \
         libcairo2 \
         libpango-1.0-0 \
         libxcomposite1 \
