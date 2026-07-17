@@ -9,9 +9,9 @@ USER root
 
 ARG UV_VERSION=0.11.19
 ARG UV_DIGEST=sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6
-ARG COSIGN_VERSION=3.0.6
-ARG COSIGN_AMD64_SHA256=c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
-ARG COSIGN_ARM64_SHA256=bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8
+ARG COSIGN_VERSION=3.1.1
+ARG COSIGN_AMD64_SHA256=ae1ecd212663f3693ad9edf8b1a183900c9a52d3155ba6e354237f9a0f6463fc
+ARG COSIGN_ARM64_SHA256=2ec865872e331c32fd12b08dae15332d3f92c0aa029219589684a4903ca85d11
 ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -45,7 +45,12 @@ RUN set -eux && \
     curl -fsSL -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/astral-sh/uv/attestations/${UV_DIGEST}" \
         -o /tmp/uv-attestations.json && \
-    jq '.attestations[0].bundle' /tmp/uv-attestations.json > /tmp/uv-bundle.json && \
+    BUNDLE_URL=$(jq -r '.attestations[0].bundle_url // .attestations[0].bundle' /tmp/uv-attestations.json) && \
+    if echo "${BUNDLE_URL}" | grep -q '^https\?://'; then \
+        curl -fsSL "${BUNDLE_URL}" -o /tmp/uv-bundle.json; \
+    else \
+        jq -n --arg b "${BUNDLE_URL}" '$b' > /tmp/uv-bundle.json; \
+    fi && \
     cosign verify-blob-attestation \
         --new-bundle-format \
         --bundle /tmp/uv-bundle.json \
