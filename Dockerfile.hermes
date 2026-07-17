@@ -97,13 +97,16 @@ RUN apt-get update && \
         python3-dev build-essential git libffi-dev libolm-dev \
     && git clone --depth 1 --branch v2026.7.7.2 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python python3 \
-    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
+    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
+    && cd /opt/hermes-agent/web && npm install && npm run build && cd / \
     && chown -R harness:harness /opt/hermes-agent \
-    && rm -rf /opt/hermes-agent/.git /root/.cache/uv \
+    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv \
     && rm -rf /var/lib/apt/lists/*
 
 COPY hermes/local.yaml /etc/harness/hermes-local.yaml
+
+ENV HERMES_DISABLE_LAZY_INSTALLS=1
 
 COPY entrypoint-hermes.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
