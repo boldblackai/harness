@@ -104,6 +104,34 @@ RUN apt-get update && \
     && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv \
     && rm -rf /var/lib/apt/lists/*
 
+# Chromium shared libraries required to run Playwright browsers (the default
+# browser for the @playwright/mcp server). Minimum deps for Chromium only;
+# Firefox/WebKit would need additional GTK/GStreamer libs. See issue #128.
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libglib2.0-0t64 \
+        libnspr4 \
+        libnss3 \
+        libatk1.0-0t64 \
+        libatk-bridge2.0-0t64 \
+        libdbus-1-3 \
+        libcups2t64 \
+        libxcb1 \
+        libxkbcommon0 \
+        libasound2t64 \
+        libgbm1 \
+        libx11-6 \
+        libxext-6 \
+        libcairo2 \
+        libpango-1.0-0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libatspi2.0-0t64 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY hermes/local.yaml /etc/harness/hermes-local.yaml
 
 ENV HERMES_DISABLE_LAZY_INSTALLS=1
