@@ -5,7 +5,11 @@ description: Automate releasing the harness npm package. Use this skill whenever
 
 # Release Skill for `harness`
 
-Automates the full release pipeline: pre-flight checks → version bump → CHANGELOG → build → publish → tag → GitHub release.
+Automates the full release pipeline: pre-flight checks → version bump → CHANGELOG → build → commit/push main → tag (triggers npm publish via OIDC trusted publishing) → verify npm → GitHub release → verify CI.
+
+> **npm publishing is fully automated via [trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC).** Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which authenticates to npm via a short-lived OIDC token — no long-lived npm token, no manual `npm publish`, no OTP. Provenance attestations are generated automatically. The trust boundary is "can push to main" = "can release."
+>
+> **Prerequisite (one-time, manual on npmjs.com):** Configure the trusted publisher for `@boldblackai/harness` under Settings → Trusted Publisher → GitHub Actions: org=`boldblackai`, repo=`harness`, workflow filename=`publish.yml`. Then under Settings → Publishing access, select "Require two-factor authentication and disallow tokens" (recommended) — OIDC publishes are unaffected by this setting.
 
 ## Step 1: Pre-flight checks (abort on failure)
 
@@ -20,7 +24,7 @@ If they differ, there are unpushed commits on `main`. Inform the user:
 
 > "Aborting: local main is ahead of main@origin. Push your commits first with `jj git push`."
 
-**Clean working state** — Run `jj status`. If there are uncommitted changes beyond what you're about to create (package.json + CHANGELOG.md), warn the user and ask whether to proceed.
+**Clean working state** — Run `jj status`. If there are uncommitted changes beyond what you're about to create (`package.json` + `CHANGELOG.md`), warn the user and ask whether to proceed.
 
 **README is up to date** — Read `README.md` and the commits since the last tag (collected in Step 3). Check whether any commit introduces new CLI flags, options, agents, or user-visible behavior that isn't reflected in `README.md`. If gaps are found, list them and ask the user to update `README.md` before continuing:
 
@@ -160,15 +164,9 @@ jj bookmark set main -r @-
 jj git push --bookmark main
 ```
 
-## Step 8: Publish to npm
+## Step 8: Create and push the tag (triggers npm publish)
 
-npm publish requires an OTP and cannot be automated. Tell the user:
-
-> "Please run `npm publish` (with `--otp=<code>` if prompted for 2FA). Let me know when it succeeds and I'll continue."
-
-Wait for the user to confirm success before proceeding to Step 9.
-
-## Step 9: Create and push the tag
+The tag push triggers `.github/workflows/publish.yml`, which publishes to npm via OIDC trusted publishing — automatically, no manual intervention needed.
 
 Create the tag locally pointing to the release commit (one behind `@`, the current empty working copy):
 
@@ -182,6 +180,30 @@ Push it to the remote (jj doesn't support pushing tags directly; use git):
 git push --tags
 ```
 
+## Step 9: Verify npm publish succeeded
+
+The tag push triggers `publish.yml`. Poll until it completes:
+
+```bash
+gh run list --repo boldblackai/harness --workflow publish.yml --limit 1
+```
+
+Use the run ID to watch for completion:
+
+```bash
+gh run watch <run-id> --repo boldblackai/harness
+```
+
+Once the workflow succeeds, verify the package landed on npm **with provenance attestations**:
+
+```bash
+npm view @boldblackai/harness@<version> dist --json
+```
+
+Confirm the output includes an `attestations` field (not just `signatures`). If `attestations` is missing, the publish did not generate provenance — investigate before continuing.
+
+Do not proceed to Step 10 until the npm package is confirmed published with provenance.
+
 ## Step 10: Create GitHub release
 
 Extract the changelog section for this version — everything from `## [<version>]` down to (but not including) the next `## [` entry.
@@ -192,18 +214,20 @@ gh release create v<version> \
   --notes "<changelog-entry>"
 ```
 
-## Step 11: Post-flight — verify CI succeeded
+This triggers the Docker image build workflow (`docker.yml`).
 
-After creating the GitHub release, poll until the release-triggered workflow run completes:
+## Step 11: Post-flight — verify Docker CI succeeded
+
+The GitHub release triggers `docker.yml`. Poll until the release-triggered workflow run completes:
 
 ```bash
-gh run list --repo <owner>/<repo> --event release --limit 1
+gh run list --repo boldblackai/harness --event release --limit 1
 ```
 
 Use the run ID to watch for completion:
 
 ```bash
-gh run view <run-id> --repo <owner>/<repo>
+gh run view <run-id> --repo boldblackai/harness
 ```
 
 Check that **all jobs** show `✓` (success). Pay particular attention to:
@@ -214,7 +238,7 @@ Check that **all jobs** show `✓` (success). Pay particular attention to:
 If any job failed, run:
 
 ```bash
-gh run rerun <run-id> --failed --repo <owner>/<repo>
+gh run rerun <run-id> --failed --repo boldblackai/harness
 ```
 
 Then wait for it to complete and verify again before reporting success.
@@ -227,5 +251,6 @@ Tell the user:
 
 - Version released
 - The CHANGELOG entry added
+- npm publish status (workflow green, provenance attestations confirmed)
 - GitHub release URL (from `gh release create` stdout)
-- CI status (all jobs green)
+- Docker CI status (all jobs green)
