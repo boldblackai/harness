@@ -15,18 +15,17 @@ Automates the full release pipeline: pre-flight checks → version bump → CHAN
 
 ## Step 1: Pre-flight checks (abort on failure)
 
-**Main bookmark is up to date** — Verify that the local `main` bookmark and `main@origin` point to the same commit. In jj, remote bookmarks use `<bookmark>@<remote>` syntax (not `origin/<bookmark>`). Run:
+**Ensure working from latest main** — Fetch latest and verify local main matches remote:
 
 ```bash
-jj log -r "main" --no-graph -T 'commit_id ++ "\n"'
-jj log -r "main@origin" --no-graph -T 'commit_id ++ "\n"'
+git fetch origin main
+git checkout main
+git pull --ff-only origin main
 ```
 
-If they differ, there are unpushed commits on `main`. Inform the user:
+If `git pull --ff-only` fails (local main has diverged), inform the user and abort.
 
-> "Aborting: local main is ahead of main@origin. Push your commits first with `jj git push`."
-
-**Clean working state** — Run `jj status`. If there are uncommitted changes beyond what you're about to create (`package.json` + `CHANGELOG.md` + deploy guides), warn the user and ask whether to proceed.
+**Clean working state** — Run `git status`. If there are uncommitted changes beyond what you're about to create (`package.json` + `CHANGELOG.md` + deploy guides), warn the user and ask whether to proceed.
 
 **README is up to date** — Read `README.md` and the commits since the last tag (collected in Step 3). Check whether any commit introduces new CLI flags, options, agents, or user-visible behavior that isn't reflected in `README.md`. If gaps are found, list them and ask the user to update `README.md` before continuing:
 
@@ -124,7 +123,7 @@ Omit `### Dependency Updates` and `### Upstream Release Notes` entirely if there
 
 ## Step 5: Bump version in package.json
 
-Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits automatically and would interfere with the jj workflow.
+Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits and tags automatically and would interfere with the release workflow.
 
 ## Step 5b: Update hermes image tag in deploy guides
 
@@ -150,34 +149,28 @@ pnpm build
 
 Stop if this fails.
 
-## Step 7: Commit the release and create a branch
+## Step 7: Create release branch and commit
 
-In jj, file changes are automatically snapshotted in the working-copy commit. Describe it and move to a new empty commit:
-
-```bash
-jj describe -m "release v<version>"
-jj new
-```
-
-Create a release branch pointing to the release commit (do NOT move main):
+Create a release branch from main and commit all release changes:
 
 ```bash
-jj bookmark set release/v<version> -r @-
+git checkout -b release/v<version>
+git add package.json CHANGELOG.md docs/
+git commit -m "release v<version>"
 ```
 
 ## Step 8: Push branch and open release PR
 
-Push the release branch to the fork:
+Ensure a fork remote exists (for the agent's bot account):
 
 ```bash
-jj git push --bookmark release/v<version> --remote fork
+git remote add fork https://github.com/BoldBlackBot/harness.git 2>/dev/null || true
 ```
 
-If the fork remote doesn't exist, create it first:
+Push the release branch:
 
 ```bash
-git remote add fork https://github.com/BoldBlackBot/harness.git
-jj git push --bookmark release/v<version> --remote fork
+git push -u fork release/v<version>
 ```
 
 Open the PR:
@@ -209,8 +202,7 @@ After the user confirms the PR is merged, fetch the latest main and tag the merg
 
 ```bash
 git fetch origin main
-MERGE_SHA=$(git rev-parse origin/main)
-git tag v<version> $MERGE_SHA
+git tag v<version> origin/main
 git push origin v<version>
 ```
 
