@@ -191,6 +191,8 @@ Each run starts the container with:
 - `--security-opt seccomp=...` — inline seccomp profile blocks `socket(AF_ALG)` to prevent kernel crypto API access (a known container escape vector)
 - Only your mounted directory (or single file with `-f`) is visible to the agent
 
+Running harness from your home directory is blocked by default, since that would mount all of `$HOME` into the container — exposing dotfiles, credentials, and SSH keys to the agent and giving it a noisy, unfocused workspace. If the resolved working directory equals your home, harness exits with an error. Pass `--mount-entire-home` to opt in for the rare case where mounting all of `$HOME` is genuinely intended. `--file` mode is unaffected (it mounts a single file, not the working directory).
+
 These hardening flags are docker-specific. Under `HARNESS_CONTAINER_RUNTIME=apple`, `--security-opt` is not applied (apple/container workloads are microVMs with their own guest kernel, so the seccomp profile's host-kernel role is subsumed by the VM boundary); capability restrictions remain. See [Container runtime](#container-runtime).
 
 ### Image verification
@@ -241,6 +243,7 @@ If an old `.harness/` directory exists in your working directory, harness will e
 | `--no-context-files` | `-nc` | Disable mounting global context files (`~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`) |
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
+| `--mount-entire-home` | | Allow running from your home directory (mounts all of `$HOME` as the workspace) |
 | `--help`      | `-h`  | Show help |
 
 ### Environment variables

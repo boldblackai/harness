@@ -1,5 +1,78 @@
 # Changelog
 
+## [1.9.2] - 2026-07-18
+
+### Summary
+
+Maintenance release with a new home-directory safety guard, Chromium support for the hermes agent, and several dependency bumps. Harness now refuses to run from your home directory by default (it would mount all of `$HOME`, exposing dotfiles and credentials); pass the new `--mount-entire-home` flag to opt in. The hermes image gains the shared libraries Chromium needs to run Playwright browsers, and the hermes web UI is now pre-built into the image. Also bumps `pi-coding-agent` to 0.80.9 and `hermes-agent` to v2026.7.7.2 (Hermes Agent v0.18.x).
+
+```bash
+# harness refuses to run from $HOME by default; opt in explicitly:
+harness --mount-entire-home
+```
+
+### Dependency Updates
+
+- updated `@earendil-works/pi-coding-agent` from `0.79.2` to `0.80.9`
+- updated `hermes-agent` from `v2026.6.19` to `v2026.7.7.2`
+- updated `gh` from `2.95.0` to `2.96.0`
+- downgraded `cosign` from `3.1.1` to `3.0.6`
+
+### Upstream Release Notes
+
+#### @earendil-works/pi-coding-agent 0.79.2 → 0.80.9
+
+**v0.79.3** — Fixed inherited OpenAI GPT-5.4/5.5 and Codex context-window metadata to use the 272k Codex backend limit, avoiding an over-limit billing hazard.
+
+**v0.79.4** — Automatic first-run theme detection from the terminal background; `SHA256SUMS` integrity files added to standalone binary releases; many inherited fixes (bash tool output draining, signal-based shutdown cleanup, pnpm global `pi update`, CJK overlay alignment, custom-provider key literals).
+
+**v0.79.5** — Provider-scoped `auth.json` API-key `env` overrides (Cloudflare/Azure/Vertex/Bedrock/cache/proxy); a global `httpProxy` setting; Vercel AI Gateway attribution headers; several inherited provider/terminal fixes.
+
+**v0.79.6** — Fixed the HTTP dispatcher to preserve a caller's deliberate `fetch` override; fixed inherited OpenCode Go DeepSeek V4 thinking-off compatibility.
+
+**v0.79.7** — Automatic light/dark theme mode that follows terminal color-scheme changes; `pi update` now updates pi only by default (use `--all` for packages); extension helpers `CONFIG_DIR_NAME` and edit-diff exports; Warp terminal inline image rendering.
+
+**v0.79.8** — Selective provider base entry points (`pi-ai/base`, `pi-agent-core/base`); Mistral prompt caching with cached-token accounting; post-compaction token estimates in compact results/events; `openrouter/fusion` alias.
+
+**v0.79.9** — Chat-template thinking compatibility (`chat_template_kwargs`) for vLLM/HF models like DeepSeek; corrected GLM-5.2 Fireworks routing and OpenRouter `xhigh` support; inherited fixes (fuzzy `edit` block preservation, WSL `bash.exe` stdin, deep-branch quadratic perf).
+
+**v0.79.10** — Extension compaction events now carry `reason`/`willRetry`; safer `pi update` that installs the exact checked version and links the changelog; fixed `find` tool handling of nested-repo gitignore rules.
+
+**v0.80.1** — Fixes only: Bedrock scoped `AWS_PROFILE` endpoint resolution, Fireworks Anthropic-compat session-affinity/tool defaults, and Together MiniMax M2.7 metadata.
+
+**v0.80.2** — `ApiKeyCredential` now uses the `type: "api_key"` discriminator with provider-scoped `env`; renamed `ExecutionEnvExecOptions` → `ShellExecOptions`; restored legacy compat stream aliases and the `detectCompat` fallback; fixed request-scoped auth resolution for providers like Cloudflare.
+
+**v0.80.3** — Anthropic Claude Sonnet 5 support (adaptive thinking); `outputPad` horizontal padding; configurable `externalEditor`; RPC `get_entries`/`get_tree`; extension `session_info_changed` events; modern Azure Foundry endpoints; default OpenAI model now `gpt-5.5`.
+
+**v0.80.5** — Maintenance release (no curated changelog).
+
+**v0.80.6** — New `max` thinking level above `xhigh` (GPT-5.6 / adaptive Claude, `--thinking max`); request-wide input-token pricing tiers for accurate long-context cost accounting; `~` home expansion for `shellPath`; fixed post-compaction output-token budgeting and GPT-5.x long-context pricing.
+
+**v0.80.7** — **Breaking:** removed `compat.sendSessionIdHeader`, replaced by `compat.sessionAffinityFormat`. Cache-friendly dynamic tool loading (Anthropic/OpenAI Responses preserve the cache prefix); `Ctrl+X` to copy the last assistant message; Fable 5 `xhigh`/`max` thinking; `toolChoice` support for OpenAI/Codex Responses; fixed system-prompt date-based cache invalidation.
+
+**v0.80.8** — Unified `ModelRuntime` (model config, provider-owned `/login`, dynamic catalogs); live `/model` catalog refresh + `pi update --models`; xAI device-code OAuth and Grok 4.5 Responses. **SDK breaking changes:** replaced `authStorage`/`modelRegistry` with async `modelRuntime`, removed redundant `ModelRuntime` projections, and `ModelRegistry.refresh()` is now async.
+
+**v0.80.9** — Kimi K3 support across built-in providers with progressive (deferred) extension tool activation; xAI login uses a prefilled "Sign in with SuperGrok or X Premium" link and the default xAI model is now Grok 4.5; removed older Grok 3/4 variants from the xAI catalog.
+
+#### hermes-agent v2026.6.19 → v2026.7.7.2
+
+**v2026.7.1** (Hermes Agent v0.18.0, "The Judgment Release") —
+- Closed 100% of open P0/P1 issues and PRs (~700 highest-priority items) in a focused clean-sweep.
+- Mixture-of-Agents became a first-class selectable model (`moa` provider) showing each reference model's reasoning and live-streaming the aggregator's answer.
+- `/goal` completion contracts plus self-verification of coding work against project checks; `/learn` distills reusable skills; `/journey` is a playable timeline of memories/skills; `delegate_task` can fan out background subagents.
+- Google Vertex AI provider (auto-refreshing service-account OAuth tokens); gateway scale-to-zero and external drain coordination; first-class coding Projects in the desktop app; a large security hardening round.
+
+**v2026.7.7** (Hermes Agent v0.18.1) — Patch release rolling up ~660 PRs merged since v0.18.0 (Windows installer self-healing, dashboard/gateway fixes, WhatsApp dashboard pairing, MCP/provider fixes, stability work). Full curated notes deferred to v0.19.0.
+
+**v2026.7.7.2** (Hermes Agent v0.18.2) — Same-day patch unpinning the WhatsApp Baileys dependency from a git commit to the published 7.0.0-rc13, making tagged-release Docker builds reliable.
+
+### Changes
+
+- d8463c3 fix: refuse to run from $HOME unless --mount-entire-home is passed (#125)
+- d1b955d chore: add mise to check-deps skill + bump eligible dependencies (#124)
+- af0debf Pre-build web UI in Docker image (#122)
+- 98fc1e0 feat(hermes): add Chromium system deps for Playwright browsers (#129)
+
 ## [1.9.1] - 2026-06-27
 
 ### Summary
