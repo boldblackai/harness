@@ -5,22 +5,27 @@ description: Automate releasing the harness npm package. Use this skill whenever
 
 # Release Skill for `harness`
 
-Automates the full release pipeline: pre-flight checks → version bump → CHANGELOG → build → publish → tag → GitHub release.
+Automates the full release pipeline: pre-flight checks → version bump → CHANGELOG → build → open release PR → (user merges) → tag (triggers npm publish via OIDC trusted publishing) → verify npm → GitHub release → verify CI.
+
+> **npm publishing is fully automated via [trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC).** Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which authenticates to npm via a short-lived OIDC token — no long-lived npm token, no manual `npm publish`, no OTP. Provenance attestations are generated automatically.
+>
+> **Release model:** The agent prepares the release commit (version bump + CHANGELOG + deploy guide tags) and opens a PR. A maintainer reviews and merges. The agent then tags the merge commit, which triggers the automated publish. The trust boundary is "can merge a PR to main" = "can release."
+>
+> **Prerequisite (one-time, manual on npmjs.com):** Configure the trusted publisher for `@boldblackai/harness` under Settings → Trusted Publisher → GitHub Actions: org=`boldblackai`, repo=`harness`, workflow filename=`publish.yml`. Then under Settings → Publishing access, select "Require two-factor authentication and disallow tokens" (recommended) — OIDC publishes are unaffected by this setting.
 
 ## Step 1: Pre-flight checks (abort on failure)
 
-**Main bookmark is up to date** — Verify that the local `main` bookmark and `main@origin` point to the same commit. In jj, remote bookmarks use `<bookmark>@<remote>` syntax (not `origin/<bookmark>`). Run:
+**Ensure working from latest main** — Fetch latest and verify local main matches remote:
 
 ```bash
-jj log -r "main" --no-graph -T 'commit_id ++ "\n"'
-jj log -r "main@origin" --no-graph -T 'commit_id ++ "\n"'
+git fetch origin main
+git checkout main
+git pull --ff-only origin main
 ```
 
-If they differ, there are unpushed commits on `main`. Inform the user:
+If `git pull --ff-only` fails (local main has diverged), inform the user and abort.
 
-> "Aborting: local main is ahead of main@origin. Push your commits first with `jj git push`."
-
-**Clean working state** — Run `jj status`. If there are uncommitted changes beyond what you're about to create (package.json + CHANGELOG.md), warn the user and ask whether to proceed.
+**Clean working state** — Run `git status`. If there are uncommitted changes beyond what you're about to create (`package.json` + `CHANGELOG.md` + deploy guides), warn the user and ask whether to proceed.
 
 **README is up to date** — Read `README.md` and the commits since the last tag (collected in Step 3). Check whether any commit introduces new CLI flags, options, agents, or user-visible behavior that isn't reflected in `README.md`. If gaps are found, list them and ask the user to update `README.md` before continuing:
 
@@ -118,7 +123,7 @@ Omit `### Dependency Updates` and `### Upstream Release Notes` entirely if there
 
 ## Step 5: Bump version in package.json
 
-Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits automatically and would interfere with the jj workflow.
+Edit the `version` field directly in `package.json`. Do not use `npm version` — it creates git commits and tags automatically and would interfere with the release workflow.
 
 ## Step 5b: Update hermes image tag in deploy guides
 
@@ -144,66 +149,116 @@ pnpm build
 
 Stop if this fails.
 
-## Step 7: Commit and push the release
+## Step 7: Create release branch and commit
 
-In jj, file changes are automatically snapshotted in the working-copy commit. Describe it and move to a new empty commit:
+Create a release branch from main and commit all release changes:
 
 ```bash
-jj describe -m "release v<version>"
-jj new
+git checkout -b release/v<version>
+git add package.json CHANGELOG.md docs/
+git commit -m "release v<version>"
 ```
 
-Advance the main bookmark to the release commit, then push:
+## Step 8: Push branch and open release PR
+
+Ensure a fork remote exists (for the agent's bot account):
 
 ```bash
-jj bookmark set main -r @-
-jj git push --bookmark main
+git remote add fork https://github.com/BoldBlackBot/harness.git 2>/dev/null || true
 ```
 
-## Step 8: Publish to npm
-
-npm publish requires an OTP and cannot be automated. Tell the user:
-
-> "Please run `npm publish` (with `--otp=<code>` if prompted for 2FA). Let me know when it succeeds and I'll continue."
-
-Wait for the user to confirm success before proceeding to Step 9.
-
-## Step 9: Create and push the tag
-
-Create the tag locally pointing to the release commit (one behind `@`, the current empty working copy):
+Push the release branch:
 
 ```bash
-jj tag set v<version> -r @-
+git push -u fork release/v<version>
 ```
 
-Push it to the remote (jj doesn't support pushing tags directly; use git):
+Open the PR:
 
 ```bash
-git push --tags
+gh pr create \
+  --repo boldblackai/harness \
+  --head BoldBlackBot:release/v<version> \
+  --base main \
+  --title "release v<version>" \
+  --body "Release v<version>.
+
+See CHANGELOG.md for details.
+
+Merge to trigger the automated npm publish (OIDC trusted publishing)."
 ```
 
-## Step 10: Create GitHub release
+## Step 9: Wait for maintainer to merge the PR
 
-Extract the changelog section for this version — everything from `## [<version>]` down to (but not including) the next `## [` entry.
+**STOP HERE.** The skill cannot proceed until the PR is merged. Tell the user:
+
+> "Release PR #N is up: <url>. Review and merge it, then tell me to continue."
+
+Do not proceed to Step 10 until the user confirms the PR has been merged.
+
+## Step 10: Tag the merge commit (triggers npm publish)
+
+After the user confirms the PR is merged, fetch the latest main and tag the merge commit:
 
 ```bash
-gh release create v<version> \
-  --title "v<version>" \
-  --notes "<changelog-entry>"
+git fetch origin main
+git tag v<version> origin/main
+git push origin v<version>
 ```
 
-## Step 11: Post-flight — verify CI succeeded
+The tag push triggers `.github/workflows/publish.yml`, which publishes to npm via OIDC trusted publishing — automatically, no manual intervention needed.
 
-After creating the GitHub release, poll until the release-triggered workflow run completes:
+> **Important:** Tag `origin/main` (the merge commit), not the branch commit. The PR was squash- or rebase-merged, so the SHA on main is different from the branch SHA.
+
+## Step 11: Verify npm publish succeeded
+
+The tag push triggers `publish.yml`. Poll until it completes:
 
 ```bash
-gh run list --repo <owner>/<repo> --event release --limit 1
+gh run list --repo boldblackai/harness --workflow publish.yml --limit 1
 ```
 
 Use the run ID to watch for completion:
 
 ```bash
-gh run view <run-id> --repo <owner>/<repo>
+gh run watch <run-id> --repo boldblackai/harness
+```
+
+Once the workflow succeeds, verify the package landed on npm **with provenance attestations**:
+
+```bash
+npm view @boldblackai/harness@<version> dist --json
+```
+
+Confirm the output includes an `attestations` field (not just `signatures`). If `attestations` is missing, the publish did not generate provenance — investigate before continuing.
+
+Do not proceed to Step 12 until the npm package is confirmed published with provenance.
+
+## Step 12: Create GitHub release
+
+Extract the changelog section for this version — everything from `## [<version>]` down to (but not including) the next `## [` entry.
+
+```bash
+gh release create v<version> \
+  --repo boldblackai/harness \
+  --title "v<version>" \
+  --notes "<changelog-entry>"
+```
+
+This triggers the Docker image build workflow (`docker.yml`).
+
+## Step 13: Post-flight — verify Docker CI succeeded
+
+The GitHub release triggers `docker.yml`. Poll until the release-triggered workflow run completes:
+
+```bash
+gh run list --repo boldblackai/harness --event release --limit 1
+```
+
+Use the run ID to watch for completion:
+
+```bash
+gh run view <run-id> --repo boldblackai/harness
 ```
 
 Check that **all jobs** show `✓` (success). Pay particular attention to:
@@ -214,7 +269,7 @@ Check that **all jobs** show `✓` (success). Pay particular attention to:
 If any job failed, run:
 
 ```bash
-gh run rerun <run-id> --failed --repo <owner>/<repo>
+gh run rerun <run-id> --failed --repo boldblackai/harness
 ```
 
 Then wait for it to complete and verify again before reporting success.
@@ -227,5 +282,7 @@ Tell the user:
 
 - Version released
 - The CHANGELOG entry added
+- Release PR URL (merged)
+- npm publish status (workflow green, provenance attestations confirmed)
 - GitHub release URL (from `gh release create` stdout)
-- CI status (all jobs green)
+- Docker CI status (all jobs green)
