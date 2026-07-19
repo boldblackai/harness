@@ -282,6 +282,14 @@ cpus = 8
 memory = "4g"
 ```
 
+**Container → host (`host.docker.internal`).** Docker Desktop provides `host.docker.internal` automatically; Apple's `container` CLI does not. Local-mode agents (pi, opencode, hermes without `-e`) reach LM Studio and other host services via that hostname. One-time setup on Apple Silicon (requires administrator):
+
+```bash
+sudo container system dns create host.docker.internal --localhost 203.0.113.113
+```
+
+Harness prints a reminder on `HARNESS_CONTAINER_RUNTIME=apple` runs if this mapping is missing. See [apple/container — access a host service](https://github.com/apple/container/blob/main/docs/how-to.md#access-a-host-service-from-a-container).
+
 ### Agent-specific behavior
 
 - **pi** — `-m` is passed straight to the binary as `--model`.

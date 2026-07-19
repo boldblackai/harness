@@ -275,12 +275,21 @@ test("apple runtime with `container` absent from PATH exits with the install hin
     path.join(os.tmpdir(), "harness-nodocker-"),
   );
   makeDockerShim(dockerOnlyDir);
+  const pathWithoutContainer = process.env.PATH.split(path.delimiter)
+    .filter((dir) => {
+      try {
+        return !fs.existsSync(path.join(dir, "container"));
+      } catch {
+        return true;
+      }
+    })
+    .join(path.delimiter);
   try {
     const r = spawnSync("node", [CLI, "-p", "noop"], {
       cwd: WORK_DIR,
       env: {
         ...process.env,
-        PATH: `${dockerOnlyDir}:${process.env.PATH}`,
+        PATH: `${dockerOnlyDir}:${pathWithoutContainer}`,
         HARNESS_IMAGE_TAG: "test-tag",
         HARNESS_CONTAINER_RUNTIME: "apple",
       },
@@ -300,6 +309,24 @@ test("apple runtime with `container` absent from PATH exits with the install hin
   } finally {
     fs.rmSync(dockerOnlyDir, { recursive: true, force: true });
   }
+});
+
+test("HARNESS_CONTAINER_RUNTIME=apple warns when host.docker.internal DNS is missing", () => {
+  const which = spawnSync("sh", ["-c", "command -v container"], {
+    encoding: "utf8",
+  });
+  if (which.status !== 0) return;
+  const list = spawnSync("container", ["system", "dns", "list"], {
+    encoding: "utf8",
+  });
+  if (list.status !== 0 || list.stdout.includes("host.docker.internal")) return;
+
+  const r = runCli(["-p", "noop"], {
+    extraEnv: { HARNESS_CONTAINER_RUNTIME: "apple" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /host\.docker\.internal/);
+  assert.match(r.stderr, /container system dns create/);
 });
 
 // ---- cosign cache is runtime-agnostic -------------------------------------

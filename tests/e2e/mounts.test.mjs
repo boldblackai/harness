@@ -1017,8 +1017,8 @@ test("global ~/.agents/AGENTS.md is mounted to the hermes context path", () => {
     const a = dockerArgs(r.stdout);
     assert.ok(a, "expected DOCKER_INVOKED line");
     assert.ok(
-      a.some((arg) => arg.endsWith(":/home/harness/.hermes/AGENTS.md")),
-      `expected AGENTS.md mount at hermes path in: ${a.join(" ")}`,
+      a.some((arg) => arg.endsWith(":/workspace/AGENTS.md")),
+      `expected AGENTS.md mount at hermes workspace path in: ${a.join(" ")}`,
     );
   } finally {
     cleanup();
