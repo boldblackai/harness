@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Dependency Updates
+
+- updated `@earendil-works/pi-coding-agent` from `0.80.9` to `0.80.10`
+- updated `opencode-ai` from `1.15.10` to `1.18.4`
+- updated `hermes-agent` from `v2026.7.7.2` to `v2026.7.20`
+- updated `uv` from `0.11.19` to `0.11.30`
+- updated `pnpm` from `10.33.2` to `10.34.5`
+- updated `mise` from `2026.4.23` to `2026.7.11`
+
+### Notes
+
+- `cosign` remains at `3.0.6`. Although `3.1.2` is available (10 days old), it is held pending verification that the nil-pointer crash in `verify-blob-attestation --check-claims=false` (the regression that forced the downgrade from 3.1.1) is resolved.
+
 ## [1.9.3] - 2026-07-28
 
 ### Summary
