@@ -22,8 +22,8 @@ interface Args extends ParsedArgs {
   skills?: boolean;
   "context-files"?: boolean;
   "mount-entire-home"?: boolean;
-  "env-file"?: string;
-  e?: string;
+  "env-file"?: string[] | string;
+  e?: string[] | string;
   file?: string;
   f?: string;
   prompt?: string;
@@ -38,7 +38,7 @@ interface Args extends ParsedArgs {
 interface AgentOptions {
   prompt: string | null;
   model: string | null;
-  envFilePath: string | null;
+  envFilePaths: string[];
 }
 
 interface PersistMount {
@@ -252,13 +252,14 @@ interface AgentAdapter {
 }
 
 class PiAdapter implements AgentAdapter {
-  buildCommand({ prompt, model, envFilePath }: AgentOptions): string[] {
+  buildCommand({ prompt, model, envFilePaths }: AgentOptions): string[] {
     // In local mode (no env file), pass --provider ollama so pi routes
     // the model to the local LM Studio provider. Without this, model names
     // containing slashes (e.g. HuggingFace IDs like "qwen/qwen3.5-9b") are
     // misinterpreted as provider/model format, causing pi to silently ignore
     // --model and fall back to a default that may require cloud credentials.
-    const providerArgs = !envFilePath && model ? ["--provider", "ollama"] : [];
+    const providerArgs =
+      envFilePaths.length === 0 && model ? ["--provider", "ollama"] : [];
     const modelArgs = model ? ["--model", model] : [];
     if (prompt !== null) {
       return ["pi", "-p", prompt, ...providerArgs, ...modelArgs];
@@ -507,7 +508,7 @@ const USAGE = `Usage: harness [options]
 
 Options:
   -p, --prompt <text>    Pass a prompt directly to the coding agent
-  -e, --env-file <file>  Load environment variables from a file into the container
+  -e, --env-file <file>  Load environment variables from a file into the container; may be repeated
   -f, --file <file>      Mount a single file into the container instead of the current directory
   -m, --model <model>    Override the model used by the agent
   -a, --agent <name>     Select the coding agent adapter: pi, opencode, hermes (default: pi)
@@ -626,7 +627,11 @@ const noSkills = argv.skills === false;
 const noContextFiles = argv["context-files"] === false;
 const mountEntireHome = argv["mount-entire-home"] === true;
 const localMode = argv.local;
-const envFilePath = argv["env-file"] || null;
+const envFilePaths: string[] = Array.isArray(argv["env-file"])
+  ? argv["env-file"]
+  : argv["env-file"]
+    ? [argv["env-file"]]
+    : [];
 const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
 const modelArg = argv.model || null;
@@ -644,9 +649,11 @@ const agentName: AgentName = (() => {
   return name;
 })();
 
-if (envFilePath && !fs.existsSync(envFilePath)) {
-  console.error(`harness: env file not found: ${envFilePath}`);
-  process.exit(1);
+for (const ep of envFilePaths) {
+  if (!fs.existsSync(ep)) {
+    console.error(`harness: env file not found: ${ep}`);
+    process.exit(1);
+  }
 }
 
 if (fileArg && !fs.existsSync(fileArg)) {
@@ -709,17 +716,18 @@ async function run(prompt: string | null): Promise<void> {
     }
   }
 
-  const envFileArgs = envFilePath
-    ? ["--env-file", path.resolve(envFilePath)]
-    : [];
+  const envFileArgs = envFilePaths.flatMap((f) => [
+    "--env-file",
+    path.resolve(f),
+  ]);
 
   // Cloud mode: -e without --local signals entrypoints to skip local/defaults
   // and let agents auto-detect providers from env vars in the file.
   const cloudModeEnv =
-    envFilePath && !localMode ? ["-e", "HARNESS_CLOUD_MODE=1"] : [];
+    envFilePaths.length > 0 && !localMode ? ["-e", "HARNESS_CLOUD_MODE=1"] : [];
 
   const adapter = ADAPTERS[agentName];
-  const adapterOptions = { prompt, model: modelArg, envFilePath };
+  const adapterOptions = { prompt, model: modelArg, envFilePaths };
   const containerCmd = adapter.buildCommand(adapterOptions);
   const adapterDockerArgs = adapter.extraDockerArgs?.(adapterOptions) ?? [];
 

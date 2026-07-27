@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   CLI,
   ENV_FILE,
+  ENV_FILE_2,
   REPO_ROOT,
   SAMPLE_FILE,
   SHIM_DIR,
@@ -133,6 +134,30 @@ test("--env-file is passed to docker as --env-file <abs>", () => {
   const i = a.indexOf("--env-file");
   assert.notEqual(i, -1);
   assert.equal(a[i + 1], ENV_FILE); // resolved to abs path; ENV_FILE already abs
+});
+
+test("repeated -e passes all env files to docker as separate --env-file flags", () => {
+  const r = runCli(["-e", ENV_FILE, "-e", ENV_FILE_2, "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = dockerArgs(r.stdout);
+  // Collect all values following --env-file
+  const envFiles = a.filter((_, i) => a[i - 1] === "--env-file");
+  assert.equal(
+    envFiles.length,
+    2,
+    `expected 2 --env-file flags: ${a.join(" ")}`,
+  );
+  assert.ok(envFiles.includes(ENV_FILE), `first env file missing: ${envFiles}`);
+  assert.ok(
+    envFiles.includes(ENV_FILE_2),
+    `second env file missing: ${envFiles}`,
+  );
+});
+
+test("--help documents -e may be repeated", () => {
+  const r = runCli(["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /--env-file.*may be repeated/);
 });
 
 // ---- cloud/local mode (HARNESS_CLOUD_MODE) ---------------------------------

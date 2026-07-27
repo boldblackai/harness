@@ -26,6 +26,7 @@ export const CLI = path.join(REPO_ROOT, "bin", "harness.js");
 export let SHIM_DIR;
 export let WORK_DIR;
 export let ENV_FILE;
+export let ENV_FILE_2;
 export let SAMPLE_FILE;
 
 function ensureBuilt() {
@@ -134,6 +135,9 @@ export function setupIfNecessary() {
 
     ENV_FILE = path.join(tmp, ".env");
     fs.writeFileSync(ENV_FILE, "OPENROUTER_API_KEY=fake\n");
+
+    ENV_FILE_2 = path.join(tmp, ".env2");
+    fs.writeFileSync(ENV_FILE_2, "ANTHROPIC_API_KEY=fake\n");
 
     SAMPLE_FILE = path.join(tmp, "script.py");
     fs.writeFileSync(SAMPLE_FILE, 'print("hi")\n');
