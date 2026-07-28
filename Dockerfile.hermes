@@ -91,11 +91,14 @@ RUN set -eux && \
     tar -xzf "/tmp/${TIRITH_FILE}" -C /usr/local/bin/ tirith && \
     rm -f /tmp/checksums.txt /tmp/checksums.txt.pem /tmp/checksums.txt.sig "/tmp/${TIRITH_FILE}"
 
+COPY patches/hermes-agent-64189-secret-source-repull.patch /tmp/hermes-agent-64189.patch
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3-dev build-essential git libffi-dev libolm-dev \
     && git clone --depth 1 --branch v2026.7.7.2 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git -C /opt/hermes-agent apply /tmp/hermes-agent-64189.patch \
     && uv venv /opt/hermes-agent/venv --python python3 \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
