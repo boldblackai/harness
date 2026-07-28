@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.3] - 2026-07-28
+
+### Summary
+
+Hermes-only patch release. Backports upstream hermes-agent PR [#64189](https://github.com/NousResearch/hermes-agent/pull/64189), applied at image build time over the `v2026.7.7.2` tree baked into the hermes image, so plugin-registered secret sources such as `aws_ssm` are actually consulted during the first process's initial environment load. Previously they registered after the first `load_hermes_dotenv()` call and were silently ignored, emitting `secrets.sources names unknown source(s)`. No CLI, adapter, or dependency changes.
+
+### Changes
+
+- 27d70bc fix(hermes): backport secret-source re-pull after plugin discovery (#136)
+
 ## [1.9.2] - 2026-07-18
 
 ### Summary
