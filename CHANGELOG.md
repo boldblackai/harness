@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.9.4] - 2026-07-31
+
+### Summary
+
+Maintenance release that rolls up the 7-day-cooldown dependency bumps across all three agent images and backports an upstream hermes-agent Slack Block Kit fix. `pi-coding-agent` moves to 0.80.10 (Kimi Coding adaptive-thinking compatibility), `opencode-ai` jumps to 1.18.4 (completing the Desktop v2 migration, adding skill discovery, Snowflake Cortex, session snapshots/revert, and a `--mini` CLI mode), and `hermes-agent` moves to v2026.7.20 — Hermes v0.19.0 "Quicksilver," a speed release (~80% faster first-token) that also adds in-terminal subscription management, default smart approvals, and Bitwarden/1Password secret sources. `pnpm`, `mise`, `uv`, and `cosign` are bumped as well.
+
+The harness-level change applies a new build-time patch (`hermes-agent-slack-invalid-blocks-fix.patch`) over the `v2026.7.20` tree so Slack stops rejecting entire messages when a Block Kit text element ends up with zero characters (blank quote separators, empty table cells, empty code fences).
+
+### Dependency Updates
+
+- updated pnpm from 10.33.2 to 10.34.5
+- updated `@earendil-works/pi-coding-agent` from 0.80.9 to 0.80.10
+- updated mise from 2026.4.23 to 2026.7.11
+- updated opencode-ai from 1.15.10 to 1.18.4
+- updated uv from 0.11.19 to 0.11.30
+- updated cosign from 3.0.6 to 3.1.2
+- updated hermes-agent from v2026.7.7.2 to v2026.7.20
+
+### Upstream Release Notes
+
+#### @earendil-works/pi-coding-agent 0.80.9 → 0.80.10
+
+**v0.80.10** — Kimi Coding models now use adaptive thinking correctly (K3 exposes its supported `max` level and replays empty-signature thinking blocks); fixed inherited Kimi K3 pricing/thinking metadata; restored xAI models that 0.80.9 had removed from the catalog.
+
+#### opencode-ai 1.15.10 → 1.18.4
+
+**v1.15.11–v1.15.13** — `headerTimeout` provider config (10s default for OpenAI setups); experimental OpenAI WebSocket response transport; ACP `acp-next` prompts/slash-commands/usage; Anthropic Opus 4.7+ adaptive reasoning keeps summarized thinking; session custom metadata via API/SDK; responsive/configurable TUI prompt.
+
+**v1.16.0–v1.16.2** — Managed workspace cloning that keeps dirty and untracked files; move sessions between workspaces; OpenAI models through AWS Bedrock; **skill discovery and file-based agent loading**; `run --replay` for interactive session replay; added **Snowflake Cortex** provider; subagents can be backgrounded; edit tool now refuses loose matches that could overwrite the wrong code.
+
+**v1.17.0–v1.17.5** — New `fff`-backed faster file search; Cohere North model support; `X-Session-Id` headers for sticky-routing proxies; connector-based auth flows and stored provider credentials; v2 API endpoints to create/fetch sessions; `cwd` support for local MCP servers; Snowflake Cortex external-browser OAuth.
+
+**v1.17.6–v1.17.10** — Broad MCP compatibility/capability fixes; **MCP resource template listing and read tools**; Opencode-managed provider integration; added a **`--mini` CLI mode**.
+
+**v1.17.11–v1.17.15** — **Session snapshots and revert** (roll a session back to an earlier message including file changes); Chrome-style `mod+1`–`mod+9` tab cycle shortcuts and draggable desktop tabs; `code mode` MCP adapter for confined orchestration scripts; yolo auto-approve permission mode in the TUI.
+
+**v1.17.16–v1.17.20** — Composer add-menu (files, commands, context, shell mode); inline file-browser tabs in the side panel; Grok reasoning-effort variants and xAI prompt-cache/PDF handling; Meta and GitHub Copilot model-handling fixes; GPT-5.6 / Azure updates.
+
+**v1.18.0–v1.18.4** — **Completed the Desktop v2 migration** with a setting to toggle between new and old layouts during the transition; subagents can no longer launch nested subagents by default (configurable `subagent_depth`); Kimi adaptive-thinking controls on Anthropic-compatible providers; restored Azure Cognitive Services endpoint support.
+
+#### hermes-agent v2026.7.7.2 → v2026.7.20
+
+**v2026.7.20 — Hermes v0.19.0 "The Quicksilver Release"** — Cold-start time-to-first-token dropped ~80% (4.3s → 0.9s) across CLI, gateway, TUI, desktop, and cron; reasoning models stream their thinking live by default; 20+ desktop perf PRs (14× faster streaming markdown, virtualized diffs, snappy session switching). **`/subscription` and `/topup`** let you manage your Nous plan entirely from the terminal (with matching desktop billing tab). **Smart approvals are now the default** — an LLM reviewer judges flagged commands, plus user-defined deny rules and `/deny <reason>`. **Bitwarden and 1Password secret sources** via a pluggable `SecretSource` interface (multiple vaults, precedence, provenance). Live subagent transcripts (`tail -f`) plus durable background delegation; a durable delivery-obligation ledger so finished responses survive gateway crashes (Telegram/Discord/Slack); profile-based gateway message routing (one bot token, many isolated profiles). New providers Fireworks AI, DeepInfra, and Upstage Solar; new models GPT-5.6, grok-4.5 GA, kimi-k3, claude-fable-5/sonnet-5; `max`/`ultra` reasoning tiers with per-model overrides; `hermes sessions export` (Markdown/Quarto/HTML/HF trace, with `--redact`); a security-hardening round across credential surfaces.
+
+### Changes
+
+- 40d4106 fix(hermes): backport Slack Block Kit invalid_blocks empty text element fix (#137)
+- dbbf913 chore: bump eligible dependencies (7-day cooldown) (#133)
+
 ## [1.9.3] - 2026-07-28
 
 ### Summary
