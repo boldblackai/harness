@@ -1,21 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-### Dependency Updates
-
-- updated `@earendil-works/pi-coding-agent` from `0.80.9` to `0.80.10`
-- updated `opencode-ai` from `1.15.10` to `1.18.4`
-- updated `hermes-agent` from `v2026.7.7.2` to `v2026.7.20`
-- updated `uv` from `0.11.19` to `0.11.30`
-- updated `pnpm` from `10.33.2` to `10.34.5`
-- updated `mise` from `2026.4.23` to `2026.7.11`
-- bumped `cosign` from `3.0.6` to `3.1.2`
-
-### Notes
-
-- bumped `cosign` from `3.0.6` to `3.1.2`. Version `3.1.2` includes [sigstore/cosign#5016](https://github.com/sigstore/cosign/pull/5016) which fixes the nil-pointer crash in `verify-blob-attestation --check-claims=false` that forced the downgrade from 3.1.1 in #124.
-
 ## [1.9.3] - 2026-07-28
 
 ### Summary
