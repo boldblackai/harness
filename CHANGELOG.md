@@ -10,10 +10,11 @@
 - updated `uv` from `0.11.19` to `0.11.30`
 - updated `pnpm` from `10.33.2` to `10.34.5`
 - updated `mise` from `2026.4.23` to `2026.7.11`
+- bumped `cosign` from `3.0.6` to `3.1.2`
 
 ### Notes
 
-- `cosign` remains at `3.0.6`. Although `3.1.2` is available (10 days old), it is held pending verification that the nil-pointer crash in `verify-blob-attestation --check-claims=false` (the regression that forced the downgrade from 3.1.1) is resolved.
+- bumped `cosign` from `3.0.6` to `3.1.2`. Version `3.1.2` includes [sigstore/cosign#5016](https://github.com/sigstore/cosign/pull/5016) which fixes the nil-pointer crash in `verify-blob-attestation --check-claims=false` that forced the downgrade from 3.1.1 in #124.
 
 ## [1.9.3] - 2026-07-28
 
