@@ -9,11 +9,11 @@ Add an integration test suite that exercises the full runtime path — container
 spawn → agent boot → inference call → output through harness stdout → clean
 exit — against real containers and real LLM inference.
 
-Current CI covers CLI argv construction (shim-based e2e tests) and image builds
-(`pr-build.yml`, `docker.yml`). The entire path *inside* the container —
-entrypoint execution, agent initialization, env-file forwarding, inference
-connectivity, output flow — is unverified. A regression in any of these is
-invisible until a user hits it.
+Current CI covers CLI argv construction (shim-based e2e tests), image builds
+(`pr-build.yml`, `docker.yml`), and automated releases (`tag-on-merge.yml`).
+The entire path *inside* the container — entrypoint execution, agent
+initialization, env-file forwarding, inference connectivity, output flow — is
+unverified. A regression in any of these is invisible until a user hits it.
 
 ## Motivation
 
@@ -51,9 +51,10 @@ This is deliberately simple:
   endpoint is real or simulated. The only hop being simulated is the one harness
   has the *least* control over.
 - **No PR trigger.** Shim-based e2e tests remain the PR gate. Integration tests
-  run post-merge on `main`, where a failure is an early warning before release
-  — not a development blocker. This keeps PR feedback fast and free, and avoids
-  spending API budget on every push to a feature branch.
+  run post-merge on `main` and **gate releases** — a release commit whose
+  integration tests fail blocks the release. They remain off PR branches to keep
+  PR feedback fast and free, and to avoid spending API budget on every push to a
+  feature branch.
 - **Cross-platform by default.** Without service containers, the same workflow
   structure runs on both Linux and macOS runners with no platform-specific mock
   infrastructure.
@@ -100,10 +101,12 @@ is connectivity and provider compatibility, not output quality.
 ## Cosign Verification: Out of Scope
 
 The workflow builds the image locally in-job (same pattern as `pr-build.yml`)
-and passes `HARNESS_IMAGE_TAG` to skip the cosign check — there is no signed
-image on `ghcr.io` to verify against at test time. Cosign verification remains
-covered by the existing `docker.yml` pipeline, which signs and attests on push
-to `main`.
+and passes `HARNESS_IMAGE_TAG` to skip the cosign check. Integration tests must
+complete before the release is cut, so they cannot wait on `docker.yml` to
+publish the signed SHA-tagged image to `ghcr.io`. Cosign verification remains
+covered by `docker.yml`, which signs and attests every image on push to `main`
+(and applies version tags on release commits via the `tag-on-merge.yml`
+pipeline).
 
 ## Image Source
 
@@ -112,7 +115,23 @@ The image is **built locally in-job**, following the same pattern as
 self-contained — it does not depend on `docker.yml` having finished publishing
 to `ghcr.io`.
 
+## Relationship to the Release Pipeline
+
+The release pipeline (`tag-on-merge.yml` → `docker.yml`) is fully automated: a
+`release v*` commit on `main` triggers npm OIDC publishing, git tag creation,
+GitHub release, and Docker image builds with version tags. **Integration tests
+gate this pipeline** — the release job waits for the integration test job to
+pass before proceeding. A failed integration test on a release commit blocks the
+release until the runtime-path regression is fixed. This elevates integration
+tests from informational to a hard release gate, while keeping them off PR
+branches so the shim-based e2e tests remain the fast merge gate.
+
 ## Proposed Workflow
+
+The integration workflow runs on `push: main` and via `workflow_dispatch`. The
+`tag-on-merge.yml` release job depends on its success via
+`workflow_run` gating — it only proceeds when the integration workflow reports
+`completed` with conclusion `success` on the same commit.
 
 ```yaml
 # .github/workflows/integration.yml
@@ -143,9 +162,13 @@ jobs:
       # Build image locally (base + adapter variant)
       # Write OPENROUTER_API_KEY to temp .env
       # Run each adapter:
-      #   HARNESS_CONTAINER_RUNTIME=<runtime> harness --agent <agent> -p "say OK" -e /tmp/.env
+      #   HARNESS_CONTAINER_RUNTIME=<runtime> harness --agent <agent> -m deepseek/deepseek-v4-flash-0731 -p "say OK" -e /tmp/.env
       # Assert: exit 0, non-empty stdout
 ```
+
+The `tag-on-merge.yml` release job gates on this workflow via a
+`workflow_run` check (or an equivalent required-status check), so a release
+commit whose integration tests fail does not cut a release.
 
 All three adapters (`hermes`, `opencode`, `pi`) get a one-shot prompt per
 matrix leg. Adapter-specific breakage — entrypoint differences, env var
@@ -153,7 +176,7 @@ forwarding, mount differences — surfaces independently.
 
 ## Cost Control
 
-- Cheapest OpenRouter model that still produces valid output (see open question)
+- `deepseek/deepseek-v4-flash-0731` via OpenRouter (cheapest valid model)
 - Single short prompt per adapter (one inference call per adapter per leg)
 - 90-second timeout per test
 - Post-merge only (not on every push to a PR branch)
@@ -167,8 +190,13 @@ They run on every push and provide sub-second feedback for flag parsing, mount
 construction, and adapter command assembly. The integration test suite is
 additive — it covers the runtime path the shim tests cannot reach.
 
-## Open Questions
+The release pipeline (`tag-on-merge.yml` → `docker.yml`) automates npm
+publishing, Docker image builds, cosign signing, and GitHub releases. The
+integration test suite gates it: the release job does not proceed until
+integration tests pass on the same commit.
 
-1. **Cheapest OpenRouter model** — which model is the cheapest that still
-   produces valid output for the smoke test? Needs a decision and a pin in the
-   workflow.
+## Model
+
+The smoke test uses `deepseek/deepseek-v4-flash-0731` via OpenRouter — the
+cheapest option that still produces valid output for a one-shot prompt. Pinned
+in the workflow via `OPENROUTER_MODEL`.
