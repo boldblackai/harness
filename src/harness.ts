@@ -330,7 +330,7 @@ class HermesAdapter implements AgentAdapter {
 }
 
 const IDENTITY_REGEXP =
-  "https://github.com/boldblackai/harness/.github/workflows/docker.yml@refs/tags/";
+  "https://github.com/boldblackai/harness/.github/workflows/docker.yml@refs/heads/main";
 const OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 
 interface CosignError extends NodeJS.ErrnoException {
