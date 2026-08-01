@@ -1,8 +1,3 @@
-<p align="center" style="margin-bottom: 0">
-  <img alt="harness" src="logo-light.png#gh-light-mode-only" width="250">
-  <img alt="harness" src="logo-dark.png#gh-dark-mode-only" width="250">
-</p>
-
 <p align="center">
   <strong>Run agents in a sandboxed container — ready to drop into any project.</strong>
 </p>
