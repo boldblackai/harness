@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   tag-and-release:
@@ -24,7 +25,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag (triggers npm publish)
+      - name: Create tag
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -32,6 +33,30 @@ jobs:
           else
             git tag "$TAG"
             git push origin "$TAG"
+          fi
+
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Publish to npm (OIDC trusted publishing)
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if npm view "@boldblackai/harness@${VERSION}" dist --json >/dev/null 2>&1; then
+            echo "Version $VERSION already published, skipping"
+          else
+            npm publish
           fi
 
       - name: Extract changelog entry

@@ -9,13 +9,14 @@ Automates the full release pipeline: pre-flight checks → version bump → CHAN
 
 > **npm publishing is fully automated via [trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC).** The agent never touches npm credentials, pushes tags, or creates GitHub releases. It only opens a release PR; merging that PR triggers a chain of workflows that handle everything:
 >
-> 1. **`tag-on-merge.yml`** — fires when a commit starting with `release v` lands on main (i.e., the squash-merged release PR). Reads the version from `package.json`, pushes a `v<version>` tag, and creates the GitHub release.
-> 2. **`publish.yml`** — fires on the tag push. Publishes to npm via OIDC with automatic provenance attestations.
-> 3. **`docker.yml`** — fires on the GitHub release. Builds and pushes all Docker image variants.
+> 1. **`tag-on-merge.yml`** — fires when a commit starting with `release v` lands on main (i.e., the squash-merged release PR). Tags the release, publishes to npm via OIDC (with provenance attestations), and creates the GitHub release — all in one workflow.
+> 2. **`docker.yml`** — fires on push to main. When the commit is a release (`release v` prefix), `merge-variant` produces version-tagged images (e.g. `hermes-1.9.6`) in addition to SHA tags.
+>
+> **Why one workflow, not three:** GitHub Actions does not let a workflow using `GITHUB_TOKEN` trigger another workflow. A separate `publish.yml` triggered by the tag push would never fire because the tag was pushed by `github-actions[bot]`. Merging npm publish into `tag-on-merge.yml` eliminates the cross-workflow trigger problem without needing a PAT.
 >
 > **Release model:** The trust boundary is "can merge a PR to main" = "can release." The agent has zero upstream write access — it opens the PR from its fork; the maintainer's merge triggers everything.
 >
-> **Prerequisite (one-time, manual on npmjs.com):** Configure the trusted publisher for `@boldblackai/harness` under Settings → Trusted Publisher → GitHub Actions: org=`boldblackai`, repo=`harness`, workflow filename=`publish.yml`. Then under Settings → Publishing access, select "Require two-factor authentication and disallow tokens" (recommended) — OIDC publishes are unaffected by this setting.
+> **Prerequisite (one-time, manual on npmjs.com):** Configure the trusted publisher for `@boldblackai/harness` under Settings → Trusted Publisher → GitHub Actions: org=`boldblackai`, repo=`harness`, workflow filename=`tag-on-merge.yml`. Then under Settings → Publishing access, select "Require two-factor authentication and disallow tokens" (recommended) — OIDC publishes are unaffected by this setting.
 
 ## Step 1: Pre-flight checks (abort on failure)
 
@@ -190,8 +191,10 @@ gh pr create \
 See CHANGELOG.md for details.
 
 Merging this PR will automatically:
-1. Push the \`v<version>\` tag (triggers npm publish via OIDC)
-2. Create the GitHub release (triggers Docker image build)" \
+1. Push the \`v<version>\` tag
+2. Publish to npm via OIDC (with provenance)
+3. Create the GitHub release
+4. Build and push Docker images with version tags" \
 ```
 
 ## Step 9: Wait for maintainer to merge the PR
@@ -204,11 +207,11 @@ Do not proceed to Step 10 until the user confirms the PR has been merged.
 
 ## Step 10: Monitor the automated release pipeline (read-only)
 
-After the PR is squash-merged, the merge commit (`release v<version> (#N)`) triggers `tag-on-merge.yml` on push to main. It pushes the `v<version>` tag and creates the GitHub release. The tag triggers `publish.yml` (npm OIDC), and the release triggers `docker.yml` (Docker images). All of this runs as CI workflows — the agent only monitors, never acts.
+After the PR is squash-merged, the merge commit (`release v<version> (#N)`) triggers `tag-on-merge.yml` on push to main. It pushes the `v<version>` tag, publishes to npm via OIDC, and creates the GitHub release — all in one workflow. The same push also triggers `docker.yml`, which produces version-tagged images when it detects the `release v` commit prefix. All of this runs as CI workflows — the agent only monitors, never acts.
 
 > **The PR must be squash-merged** so the commit message starts with `release v`. If the merge method is changed, the sentinel won't match and the pipeline won't fire.
 
-### 10a: Verify tag-on-merge ran
+### 10a: Verify tag-on-merge ran (tag + npm + release)
 
 ```bash
 gh run list --repo boldblackai/harness --workflow tag-on-merge.yml --limit 1
@@ -220,15 +223,6 @@ Confirm the workflow succeeded. If it failed, check logs:
 gh run view <run-id> --repo boldblackai/harness --log-failed
 ```
 
-### 10b: Verify npm publish succeeded
-
-The tag push triggers `publish.yml`. Poll until it completes:
-
-```bash
-gh run list --repo boldblackai/harness --workflow publish.yml --limit 1
-gh run watch <run-id> --repo boldblackai/harness
-```
-
 Once the workflow succeeds, verify the package landed on npm **with provenance attestations**:
 
 ```bash
@@ -237,9 +231,9 @@ npm view @boldblackai/harness@<version> dist --json
 
 Confirm the output includes an `attestations` field (not just `signatures`). If `attestations` is missing, the publish did not generate provenance — investigate before continuing.
 
-### 10c: Verify Docker CI succeeded
+### 10b: Verify Docker CI succeeded
 
-The GitHub release triggers `docker.yml`. Poll until the release-triggered workflow run completes:
+`docker.yml` fires on the same push to main. Poll until the workflow run completes:
 
 ```bash
 gh run list --repo boldblackai/harness --workflow docker.yml --limit 3

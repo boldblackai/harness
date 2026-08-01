@@ -248,6 +248,10 @@ jobs:
           if grep -q "tags/v" <<< "${{ github.ref }}"; then
             VERSION="${GITHUB_REF#refs/tags/v}"
             TAGS="${TAGS},${REPO}:${{ matrix.variant }}-${VERSION}"
+          elif [ "${{ github.event_name }}" = "push" ] && \
+               echo "${{ github.event.head_commit.message }}" | grep -q '^release v'; then
+            VERSION=$(jq -r '.version' package.json)
+            TAGS="${TAGS},${REPO}:${{ matrix.variant }}-${VERSION}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
