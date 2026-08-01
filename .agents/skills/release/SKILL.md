@@ -9,7 +9,7 @@ Automates the full release pipeline: pre-flight checks → version bump → CHAN
 
 > **npm publishing is fully automated via [trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC).** The agent never touches npm credentials, pushes tags, or creates GitHub releases. It only opens a release PR; merging that PR triggers a chain of workflows that handle everything:
 >
-> 1. **`tag-on-merge.yml`** — fires when a PR from a `release/*` branch merges to main. Reads the version from `package.json`, pushes a `v<version>` tag, and creates the GitHub release.
+> 1. **`tag-on-merge.yml`** — fires when a commit starting with `release v` lands on main (i.e., the squash-merged release PR). Reads the version from `package.json`, pushes a `v<version>` tag, and creates the GitHub release.
 > 2. **`publish.yml`** — fires on the tag push. Publishes to npm via OIDC with automatic provenance attestations.
 > 3. **`docker.yml`** — fires on the GitHub release. Builds and pushes all Docker image variants.
 >
@@ -177,7 +177,7 @@ Push the release branch:
 git push -u fork release/v<version>
 ```
 
-Open the PR — the branch name (`release/v<version>`) is the sentinel that gates `tag-on-merge.yml`:
+Open the PR — the squash merge commit message (`release v<version>`) is the sentinel that gates `tag-on-merge.yml`:
 
 ```bash
 gh pr create \
@@ -204,7 +204,9 @@ Do not proceed to Step 10 until the user confirms the PR has been merged.
 
 ## Step 10: Monitor the automated release pipeline (read-only)
 
-After the PR is merged, `tag-on-merge.yml` fires automatically. It pushes the `v<version>` tag and creates the GitHub release. The tag triggers `publish.yml` (npm OIDC), and the release triggers `docker.yml` (Docker images). All of this runs as CI workflows — the agent only monitors, never acts.
+After the PR is squash-merged, the merge commit (`release v<version> (#N)`) triggers `tag-on-merge.yml` on push to main. It pushes the `v<version>` tag and creates the GitHub release. The tag triggers `publish.yml` (npm OIDC), and the release triggers `docker.yml` (Docker images). All of this runs as CI workflows — the agent only monitors, never acts.
+
+> **The PR must be squash-merged** so the commit message starts with `release v`. If the merge method is changed, the sentinel won't match and the pipeline won't fire.
 
 ### 10a: Verify tag-on-merge ran
 
