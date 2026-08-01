@@ -1,0 +1,66 @@
+name: Tag and Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag-and-release:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag (triggers npm publish)
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping creation"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          awk -v ver="$VERSION" '
+            /^## \[/ { in_section = ($0 ~ "\\[\"" ver "\"\\]") || ($0 ~ "\\[" ver "\\]") }
+            in_section { print }
+            /^## \[/ && !($0 ~ "\\[" ver "\\]") { if (found) exit }
+            /^## \[/ && ($0 ~ "\\[" ver "\\]") { found = 1 }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          # Fallback if extraction produced nothing
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "Release v${VERSION}" > /tmp/release-notes.md
+          fi
+          cat /tmp/release-notes.md
+
+      - name: Create GitHub release (triggers Docker build)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping creation"
+          else
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "v${{ steps.version.outputs.version }}" \
+              --notes-file /tmp/release-notes.md
+          fi
