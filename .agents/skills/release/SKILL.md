@@ -9,7 +9,7 @@ Automates the full release pipeline: pre-flight checks → version bump → CHAN
 
 > **npm publishing is fully automated via [trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC).** The agent never touches npm credentials, pushes tags, or creates GitHub releases. It only opens a release PR; merging that PR triggers a chain of workflows that handle everything:
 >
-> 1. **`tag-on-merge.yml`** — fires when a `release`-labeled PR merges to main. Reads the version from `package.json`, pushes a `v<version>` tag, and creates the GitHub release.
+> 1. **`tag-on-merge.yml`** — fires when a PR from a `release/*` branch merges to main. Reads the version from `package.json`, pushes a `v<version>` tag, and creates the GitHub release.
 > 2. **`publish.yml`** — fires on the tag push. Publishes to npm via OIDC with automatic provenance attestations.
 > 3. **`docker.yml`** — fires on the GitHub release. Builds and pushes all Docker image variants.
 >
@@ -177,7 +177,7 @@ Push the release branch:
 git push -u fork release/v<version>
 ```
 
-Open the PR with the `release` label — **this label is required** for `tag-on-merge.yml` to fire:
+Open the PR — the branch name (`release/v<version>`) is the sentinel that gates `tag-on-merge.yml`:
 
 ```bash
 gh pr create \
@@ -191,13 +191,8 @@ See CHANGELOG.md for details.
 
 Merging this PR will automatically:
 1. Push the \`v<version>\` tag (triggers npm publish via OIDC)
-2. Create the GitHub release (triggers Docker image build)
-
-Do not add or remove the \`release\` label — it gates the automation." \
-  --label release
+2. Create the GitHub release (triggers Docker image build)" \
 ```
-
-> If the `release` label doesn't exist in the repo, create it first: `gh label create release --repo boldblackai/harness --description "Merging triggers the automated release pipeline" --color 0E8A16`
 
 ## Step 9: Wait for maintainer to merge the PR
 
