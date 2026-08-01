@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.8] - 2026-08-01
+
+### Summary
+
+Fixes the base Docker image version tag. The `merge-base` job in `docker.yml` only produced version-tagged base images on tag refs, not on release commits pushed to main. Adds a `type=raw` tag gated on the `release v` commit sentinel, matching the `merge-variant` pattern.
+
+### Changes
+
+- f904582 fix: produce version-tagged base image on release commits (#145)
+
 ## [1.9.7] - 2026-08-01
 
 ### Summary
