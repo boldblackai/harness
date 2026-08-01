@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.5] - 2026-08-01
+
+### Summary
+
+Replaces manual `npm publish` with fully automated trusted publishing (OIDC) via GitHub Actions. The agent never touches npm credentials or pushes tags — it opens a release PR from its fork, and merging that PR triggers the entire pipeline: auto-tagging, npm publish with provenance attestations, GitHub release creation, and Docker image builds. This closes the Socket.dev supply chain score gap by adding provenance to the npm package (the Docker images already had cosign + SLSA).
+
+### Changes
+
+- fb979e4 feat: automated npm trusted publishing (OIDC) + tag-on-merge release pipeline (#130)
+
 ## [1.9.4] - 2026-07-31
 
 ### Summary
