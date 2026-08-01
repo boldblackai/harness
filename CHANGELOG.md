@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.6] - 2026-08-01
+
+### Summary
+
+Fixes the `tag-on-merge` release workflow to use a `push` trigger instead of `pull_request`, resolving a permission issue where fork PRs receive a read-only `GITHUB_TOKEN` that blocked tag creation. Also removes the old logo from README.md.
+
+### Changes
+
+- 20ebf4e fix: switch tag-on-merge to push trigger for fork PR token permissions (#140)
+
 ## [1.9.5] - 2026-08-01
 
 ### Summary
