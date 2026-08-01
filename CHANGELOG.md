@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.7] - 2026-08-01
+
+### Summary
+
+Consolidates the release pipeline into a single workflow. npm publish (OIDC trusted publishing) is now part of `tag-on-merge.yml` instead of a separate `publish.yml`, fixing a GitHub Actions limitation where a `GITHUB_TOKEN`-pushed tag cannot trigger another workflow. Docker `merge-variant` jobs detect release commits on push to main and produce version-tagged images directly.
+
+### Changes
+
+- 4089aad fix: merge npm publish into tag-on-merge workflow (#142)
+
 ## [1.9.6] - 2026-08-01
 
 ### Summary
