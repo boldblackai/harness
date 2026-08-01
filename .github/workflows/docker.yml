@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-  release:
-    types: [published]
 
 jobs:
   build-base:
@@ -121,7 +119,6 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
             type=sha,prefix=
             type=raw,value=${{ steps.relversion.outputs.version }},enable=${{ steps.relversion.outputs.enable == 'true' }}
 
@@ -257,16 +254,10 @@ jobs:
         id: tags
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-          EVENT_NAME: ${{ github.event_name }}
-          GIT_REF: ${{ github.ref }}
         run: |
           REPO="ghcr.io/${{ github.repository }}"
           TAGS="${REPO}:${{ matrix.variant }}-${SHORT_SHA}"
-          if grep -q "tags/v" <<< "${GIT_REF}"; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            TAGS="${TAGS},${REPO}:${{ matrix.variant }}-${VERSION}"
-          elif [ "${EVENT_NAME}" = "push" ] && \
-               echo "${COMMIT_MESSAGE}" | grep -q '^release v'; then
+          if echo "${COMMIT_MESSAGE}" | grep -q '^release v'; then
             VERSION=$(jq -r '.version' package.json)
             TAGS="${TAGS},${REPO}:${{ matrix.variant }}-${VERSION}"
           fi
