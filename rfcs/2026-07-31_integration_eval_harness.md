@@ -1,13 +1,13 @@
-# Integration & Evaluation Harness: Real End-to-End CI Tests
+# Integration Tests: Real End-to-End Container Tests
 
 **Date:** 2026-07-31
 **Status:** Proposed
 
 ## Goal
 
-Add a two-tier integration test suite that exercises the full runtime path —
-container spawn → agent boot → inference call → output through harness stdout →
-clean exit — against real containers and (optionally) real LLM inference.
+Add an integration test suite that exercises the full runtime path — container
+spawn → agent boot → inference call → output through harness stdout → clean
+exit — against real containers and real LLM inference.
 
 Current CI covers CLI argv construction (shim-based e2e tests) and image builds
 (`pr-build.yml`, `docker.yml`). The entire path *inside* the container —
@@ -37,64 +37,28 @@ and mount setup. Adapter-specific breakage — an entrypoint that sources the
 wrong file, an env var that doesn't propagate — can only be caught by actually
 running the adapter in a container.
 
-## Design: Two-Tier Strategy
+## Design
 
-A single test tier cannot satisfy both "free + deterministic on every PR" and
-"exercises real inference." The design splits these concerns:
+A single integration test tier that runs **post-merge on `main`** and via
+**`workflow_dispatch`**. It runs each adapter as a one-shot prompt against a
+real OpenRouter endpoint and asserts a clean exit with non-empty output.
 
-| Tier | LLM | Cost | Deterministic | Trigger | What it exercises |
-|------|-----|------|---------------|---------|-------------------|
-| **Mock** | MockLLM sidecar | Free | Yes | Every PR | Container plumbing: image build, mounts, entrypoint, env forwarding, agent boot, API call format, output flow |
-| **Real** | OpenRouter | $ per run | No | Post-merge on main, `workflow_dispatch` | Everything mock covers + real inference connectivity, API key handling, provider compatibility |
+This is deliberately simple:
 
-The mock tier is the **primary gate on PRs**. It exercises the entire harness
-chain — everything harness is responsible for — with only the final LLM hop
-simulated. That hop is the part harness has the *least* control over, making it
-the safest thing to mock.
+- **No mock layer.** Mocking the LLM adds complexity (service containers, mock
+  configs, mock placement decisions) without meaningfully de-risking the
+  container plumbing — the runtime path is the same whether the inference
+  endpoint is real or simulated. The only hop being simulated is the one harness
+  has the *least* control over.
+- **No PR trigger.** Shim-based e2e tests remain the PR gate. Integration tests
+  run post-merge on `main`, where a failure is an early warning before release
+  — not a development blocker. This keeps PR feedback fast and free, and avoids
+  spending API budget on every push to a feature branch.
+- **Cross-platform by default.** Without service containers, the same workflow
+  structure runs on both Linux and macOS runners with no platform-specific mock
+  infrastructure.
 
-Real inference is gated to post-merge to control cost while still catching
-provider-side regressions (API changes, connectivity issues, auth failures).
-
-## Mock Tier: MockLLM
-
-[MockLLM](https://github.com/StacklokLabs/mockllm) (Apache 2.0,
-`pip install mockllm`) provides:
-
-- OpenAI + Anthropic compatible API endpoints (agents cannot distinguish it
-  from a real provider)
-- YAML-configured deterministic responses (prompt pattern → predefined response)
-- Streaming support (character-by-character, with simulated network lag)
-- Runs as a local server on `localhost:8000`
-
-### Integration in CI
-
-The mock runs as a **GitHub Actions service container**. The agent's
-`OPENAI_API_BASE` is pointed at the mock server (`http://localhost:8000`), so
-the agent makes its inference call against MockLLM instead of a real provider.
-
-A YAML fixture configures the mock to return a known response for the test
-prompt:
-
-```yaml
-# mockllm config fixture
-- pattern: "reply with OK"
-  response: "OK"
-```
-
-Because mock responses are deterministic, **content assertions become reliable**
-— ask the agent "reply with OK", assert "OK" in output. This was fragile under
-real inference (non-deterministic model output); the mock tier makes it
-deterministic.
-
-The mock tier needs no API key, no external network, and no provider
-credentials. It runs entirely within the GitHub Actions job.
-
-## Real Tier: OpenRouter
-
-Post-merge on `main` (and via `workflow_dispatch` for manual triggers), a
-separate job runs the same test suite against a real OpenRouter endpoint.
-
-### Secret flow
+## Secret Flow
 
 ```text
 GitHub Secret (OPENROUTER_API_KEY)
@@ -108,72 +72,61 @@ Harness's `-e` (env file) mechanism is the right abstraction. The key never
 appears in the workflow YAML or process args. The `.env` file is written by
 the workflow, consumed by harness, and cleaned up on job completion.
 
-### Model selection
-
-The real tier uses the cheapest available OpenRouter model that still produces
-valid output. The test only needs a single short response — the goal is
-connectivity and provider compatibility, not quality. Open questions below
-track the specific model.
-
 ## Platforms
 
-Both tiers run on a matrix of container runtimes and architectures:
+The matrix covers both container runtimes harness ships:
 
-| Runtime | Runner | Architecture | Status |
-|---------|--------|--------------|--------|
-| Docker | `ubuntu-latest` | amd64 | Ship day 1 |
-| Docker | `ubuntu-24.04-arm` | arm64 | Ship day 1 |
-| Apple Container | `macos-26` | arm64 | Ship day 1 |
+| Runtime | Runner | Architecture |
+|---------|--------|-------------|
+| Docker | `ubuntu-latest` | amd64 |
+| Docker | `ubuntu-24.04-arm` | arm64 |
+| Apple Container | `macos-26` | arm64 |
 
 macOS 26 GitHub runners are generally available as of July 2026. Apple's
-`container` CLI can now be tested in real CI, not deferred — this is the same
-runtime abstraction harness already ships (`HARNESS_CONTAINER_RUNTIME=apple`).
-
-The macOS leg runs the Docker test target (via `HARNESS_CONTAINER_RUNTIME=apple`)
-but not the real-tier OpenRouter job (macOS runners are more expensive; the
-real tier on macOS can be added later if needed).
+`container` CLI is tested in real CI via `HARNESS_CONTAINER_RUNTIME=apple`,
+exercising the same runtime abstraction harness ships to users.
 
 ## Assertions
 
-| Tier | Assertion | Proves |
-|------|-----------|--------|
-| Mock — content | stdout contains expected substring ("OK") | Agent understood prompt, response flowed through harness correctly |
-| Both — smoke | Exit code 0 + non-empty stdout | Image boots, agent runs, inference endpoint reachable |
-| Both — structural | stderr empty, container cleaned up | Full system behavior, no leaked errors |
+| Assertion | Proves |
+|-----------|--------|
+| Exit code 0 | Image boots, agent runs, inference endpoint reachable, clean shutdown |
+| Non-empty stdout | Response flowed through harness correctly |
+
+Content assertions are intentionally omitted. Real model output is
+non-deterministic; asserting on specific substrings would be fragile. The goal
+is connectivity and provider compatibility, not output quality.
 
 ## Cosign Verification: Out of Scope
 
-Cosign verification is explicitly excluded from the integration test. The
-mock tier runs on PRs, where no published image exists on `ghcr.io` — there is
-nothing signed to verify against. The workflow builds the image locally (same
-pattern as `pr-build.yml`) and passes `HARNESS_IMAGE_TAG` to skip the cosign
-check.
-
-Cosign verification remains covered by the existing `docker.yml` pipeline,
-which signs and attests on push to `main`.
+The workflow builds the image locally in-job (same pattern as `pr-build.yml`)
+and passes `HARNESS_IMAGE_TAG` to skip the cosign check — there is no signed
+image on `ghcr.io` to verify against at test time. Cosign verification remains
+covered by the existing `docker.yml` pipeline, which signs and attests on push
+to `main`.
 
 ## Image Source
 
-Both tiers **build the image locally in-job**, following the same pattern as
-`pr-build.yml` (local registry service). This is required because the test
-targets PRs, where no published image exists yet. The locally-built image is
-tagged and passed to harness via `HARNESS_IMAGE_TAG`.
+The image is **built locally in-job**, following the same pattern as
+`pr-build.yml` (local registry service for Docker). This keeps the test
+self-contained — it does not depend on `docker.yml` having finished publishing
+to `ghcr.io`.
 
-## Proposed Workflow Structure
-
-### Mock tier: `integration-mock.yml`
+## Proposed Workflow
 
 ```yaml
-name: Integration Tests (Mock)
+# .github/workflows/integration.yml
+name: Integration Tests
 
 on:
-  pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  mock:
+  smoke:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-latest
@@ -187,83 +140,35 @@ jobs:
       - uses: actions/checkout@v4
       # Install mise + build harness CLI
       # Install Docker (Linux) or apple/container (macOS)
-      # Build image locally via Makefile target
-      # Start MockLLM service container (Linux) or background process (macOS)
-      # Run: harness --agent hermes -p "reply with OK" -e /tmp/mock-env
-      # Assert: stdout contains "OK", exit 0
-```
-
-### Real tier: `integration-real.yml`
-
-```yaml
-name: Integration Tests (Real Inference)
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  real:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # Install mise + build harness CLI + Docker
-      # Build image locally
+      # Build image locally (base + adapter variant)
       # Write OPENROUTER_API_KEY to temp .env
-      # Run: harness --agent hermes -p "say hello" -e /tmp/.env
+      # Run each adapter:
+      #   HARNESS_CONTAINER_RUNTIME=<runtime> harness --agent <agent> -p "say OK" -e /tmp/.env
       # Assert: exit 0, non-empty stdout
 ```
 
+All three adapters (`hermes`, `opencode`, `pi`) get a one-shot prompt per
+matrix leg. Adapter-specific breakage — entrypoint differences, env var
+forwarding, mount differences — surfaces independently.
+
 ## Cost Control
 
-- Mock tier is free — runs on every PR at zero cost
-- Real tier uses the cheapest OpenRouter model (single short response per run)
+- Cheapest OpenRouter model that still produces valid output (see open question)
+- Single short prompt per adapter (one inference call per adapter per leg)
 - 90-second timeout per test
-- Real tier: amd64 + arm64 on Linux only (macOS deferred)
-- Real tier: post-merge only, not on every push to a PR branch
-
-## Adapters
-
-All three adapters (`hermes`, `opencode`, `pi`) get a one-shot prompt in both
-tiers. This catches adapter-specific breakage: entrypoint differences, env var
-forwarding, mount differences. Each adapter has its own entrypoint script and
-may surface failures the others don't.
+- Post-merge only (not on every push to a PR branch)
+- macOS leg runs the Docker test target (via `HARNESS_CONTAINER_RUNTIME=apple`),
+  not a separate real-tier job
 
 ## What This Does Not Replace
 
 The shim-based e2e tests remain the fast, free gate for CLI argv construction.
-They run on every push and provide sub-second feedback for flag parsing,
-mount construction, and adapter command assembly. The integration test suite
-is additive — it covers the runtime path the shim tests cannot reach.
+They run on every push and provide sub-second feedback for flag parsing, mount
+construction, and adapter command assembly. The integration test suite is
+additive — it covers the runtime path the shim tests cannot reach.
 
 ## Open Questions
 
 1. **Cheapest OpenRouter model** — which model is the cheapest that still
-   produces valid output for the real-tier smoke test? Needs a decision and
-   a pin in the workflow.
-
-2. **MockLLM placement** — GitHub Actions service container (clean separation,
-   Linux only) vs. a process spawned inside the harness container (works on
-   macOS too, but couples the mock to the test target). The macOS leg may
-   force the in-container approach since GitHub Actions service containers
-   don't support macOS runners.
-
-3. **Persistence mode** — should the mock tier also verify non-ephemeral mode
-   (container persists data across runs), or stick to ephemeral one-shots?
-   Persistence testing adds complexity (multi-run sequencing) but covers
-   another untested path.
-
-4. **MockLLM as test fixture** — should MockLLM be added to the harness Docker
-   image itself (available for users to test locally), or kept external in the
-   CI workflow only?
-
-## Future Extensions
-
-- **Canary job** — a separate hourly job that makes a single cheap OpenRouter
-  call, useful for distinguishing provider outages from code regressions when
-  the real tier fails post-merge.
-- **Persistence integration test** — multi-run sequence that verifies data
-  survives across container restarts.
-- **Eval harness** — deterministic prompts with expected output patterns, run
-  against multiple models to track provider behavior over time.
+   produces valid output for the smoke test? Needs a decision and a pin in the
+   workflow.
