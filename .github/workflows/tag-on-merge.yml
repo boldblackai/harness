@@ -1,8 +1,7 @@
 name: Tag and Release
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 permissions:
@@ -10,7 +9,7 @@ permissions:
 
 jobs:
   tag-and-release:
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
+    if: startsWith(github.event.head_commit.message, 'release v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
