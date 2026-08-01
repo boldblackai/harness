@@ -103,6 +103,18 @@ jobs:
       - name: Extract short SHA
         run: echo "SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_ENV"
 
+      - name: Read version (release commits only)
+        id: relversion
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if echo "${COMMIT_MESSAGE}" | grep -q '^release v'; then
+            echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+            echo "enable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enable=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
@@ -111,6 +123,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=sha,prefix=
+            type=raw,value=${{ steps.relversion.outputs.version }},enable=${{ steps.relversion.outputs.enable == 'true' }}
 
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
