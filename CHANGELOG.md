@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.9] - 2026-08-01
+
+### Summary
+
+Fixes cosign image verification failure caused by the release pipeline moving from tag pushes to push-to-main. The identity regexp in `verifyImage` now matches `@refs/heads/main` exactly. Also removes dead code from `docker.yml`: the `release: published` trigger, `type=semver` tag, and `tags/v` ref check — all unreachable since the switch away from tag-push triggers.
+
+### Changes
+
+- 0c5e343 fix: accept refs/heads/main in cosign identity verification (#147)
+
 ## [1.9.8] - 2026-08-01
 
 ### Summary
