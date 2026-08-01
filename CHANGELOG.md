@@ -16,6 +16,8 @@ Consolidates the release pipeline into a single workflow. npm publish (OIDC trus
 
 Fixes the `tag-on-merge` release workflow to use a `push` trigger instead of `pull_request`, resolving a permission issue where fork PRs receive a read-only `GITHUB_TOKEN` that blocked tag creation. Also removes the old logo from README.md.
 
+> **Not published to npm / no version-tagged Docker images.** The `push` trigger gave the workflow write permissions, but the tag push came from `github-actions[bot]` — GitHub Actions suppresses workflow triggers from `GITHUB_TOKEN`, so `publish.yml` never fired. Fixed in 1.9.7 by merging npm publish into `tag-on-merge.yml`.
+
 ### Changes
 
 - 20ebf4e fix: switch tag-on-merge to push trigger for fork PR token permissions (#140)
@@ -25,6 +27,8 @@ Fixes the `tag-on-merge` release workflow to use a `push` trigger instead of `pu
 ### Summary
 
 Replaces manual `npm publish` with fully automated trusted publishing (OIDC) via GitHub Actions. The agent never touches npm credentials or pushes tags — it opens a release PR from its fork, and merging that PR triggers the entire pipeline: auto-tagging, npm publish with provenance attestations, GitHub release creation, and Docker image builds. This closes the Socket.dev supply chain score gap by adding provenance to the npm package (the Docker images already had cosign + SLSA).
+
+> **Not published to npm / no version-tagged Docker images.** The `pull_request` trigger gave the workflow a read-only `GITHUB_TOKEN` for fork PRs, so `git push` of the tag failed with 403. Fixed in 1.9.6 (trigger) and 1.9.7 (publish merge).
 
 ### Changes
 
