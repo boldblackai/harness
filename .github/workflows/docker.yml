@@ -242,11 +242,19 @@ jobs:
 
       - name: Generate tags
         id: tags
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
         run: |
           REPO="ghcr.io/${{ github.repository }}"
           TAGS="${REPO}:${{ matrix.variant }}-${SHORT_SHA}"
-          if grep -q "tags/v" <<< "${{ github.ref }}"; then
+          if grep -q "tags/v" <<< "${GIT_REF}"; then
             VERSION="${GITHUB_REF#refs/tags/v}"
+            TAGS="${TAGS},${REPO}:${{ matrix.variant }}-${VERSION}"
+          elif [ "${EVENT_NAME}" = "push" ] && \
+               echo "${COMMIT_MESSAGE}" | grep -q '^release v'; then
+            VERSION=$(jq -r '.version' package.json)
             TAGS="${TAGS},${REPO}:${{ matrix.variant }}-${VERSION}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
