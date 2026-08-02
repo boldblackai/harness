@@ -91,36 +91,15 @@ jobs:
         env:
           HARNESS_REGISTRY: localhost:5000/harness
           HARNESS_IMAGE_TAG: test
+          ENV_FILE: /tmp/harness.env
         run: |
           set -o pipefail
-          mkdir -p integration-output
           FAIL=0
 
           for AGENT in pi opencode hermes; do
-            echo "=== Testing $AGENT adapter ==="
-            if timeout 120 node bin/harness.js --agent "$AGENT" \
-              -m openrouter/google/gemini-3.1-flash-lite \
-              -p "Reply with exactly: OK" \
-              -e /tmp/harness.env \
-              > "integration-output/${AGENT}.txt" 2>&1; then
-              if [ -s "integration-output/${AGENT}.txt" ]; then
-                echo "PASS: $AGENT — exit 0, non-empty output"
-              else
-                echo "FAIL: $AGENT — exit 0 but empty output"
-                FAIL=1
-              fi
-            else
-              EXIT_CODE=$?
-              if [ "$EXIT_CODE" -eq 124 ]; then
-                echo "FAIL: $AGENT — timed out after 120s"
-              else
-                echo "FAIL: $AGENT — exit code $EXIT_CODE"
-              fi
-              echo "--- output ---"
-              cat "integration-output/${AGENT}.txt"
+            if ! scripts/smoke-test.sh "$AGENT"; then
               FAIL=1
             fi
-            echo ""
           done
 
           exit "$FAIL"
