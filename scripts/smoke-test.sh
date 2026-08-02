@@ -57,6 +57,11 @@ run_harness() {
       -e "$ENV_FILE" \
       > "$outfile" 2>&1
   )
+
+  # The container runs as a different UID; files it creates are not
+  # readable by the host user. Relax permissions after the run so the
+  # assertion grep calls can read agent-created files.
+  chmod -R a+r "$workspace" 2>/dev/null
 }
 
 make_workspace() {
