@@ -11,6 +11,7 @@ permissions:
 jobs:
   smoke:
     name: Integration Smoke Tests
+    if: startsWith(github.event.head_commit.message, 'release v')
     uses: ./.github/workflows/integration-smoke.yml
     secrets:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

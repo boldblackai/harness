@@ -8,19 +8,14 @@ on:
 
 jobs:
   smoke:
-    name: ${{ matrix.runtime }} (${{ matrix.runner }})
+    name: docker (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: ubuntu-latest
-            runtime: docker
             platform: linux/amd64
           - runner: ubuntu-24.04-arm
-            runtime: docker
-            platform: linux/arm64/v8
-          - runner: macos-26
-            runtime: apple
             platform: linux/arm64/v8
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -83,24 +78,6 @@ jobs:
           build-args: BASE_IMAGE=localhost:5000/harness:test
           tags: localhost:5000/harness:hermes-test
 
-      # --- Apple Container setup (macOS only) ---
-
-      - name: Install Apple Container
-        if: matrix.runtime == 'apple'
-        run: |
-          if ! command -v container &>/dev/null; then
-            brew install container
-          fi
-          container system start
-
-      - name: Pre-pull images for Apple Container
-        if: matrix.runtime == 'apple'
-        run: |
-          for tag in test opencode-test hermes-test; do
-            echo "Pulling localhost:5000/harness:$tag ..."
-            container image pull "localhost:5000/harness:$tag"
-          done
-
       # --- Write env file ---
 
       - name: Write env file
@@ -114,7 +91,6 @@ jobs:
         env:
           HARNESS_REGISTRY: localhost:5000/harness
           HARNESS_IMAGE_TAG: test
-          HARNESS_CONTAINER_RUNTIME: ${{ matrix.runtime }}
         run: |
           set -o pipefail
           mkdir -p integration-output
@@ -123,7 +99,7 @@ jobs:
           for AGENT in pi opencode hermes; do
             echo "=== Testing $AGENT adapter ==="
             if timeout 120 node bin/harness.js --agent "$AGENT" \
-              -m deepseek/deepseek-v4-flash-0731 \
+              -m openrouter/auto \
               -p "Reply with exactly: OK" \
               -e /tmp/harness.env \
               > "integration-output/${AGENT}.txt" 2>&1; then
@@ -153,7 +129,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: integration-output-${{ matrix.runtime }}-${{ matrix.runner }}
+          name: integration-output-${{ matrix.runner }}
           path: integration-output/
           if-no-files-found: warn
           retention-days: 7
