@@ -49,6 +49,17 @@ run_harness() {
   )
 }
 
+# Create a temp workspace that is writable by the container user.
+# mktemp -d creates dirs with 0700 (host-user-only); the container
+# runs as a different UID, so file I/O inside /workspace would get
+# EACCES. We chmod 0777 so the mounted path is fully writable.
+make_workspace() {
+  local ws
+  ws="$(mktemp -d)"
+  chmod 0777 "$ws"
+  echo "$ws"
+}
+
 random_token() {
   head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n'
 }
@@ -72,7 +83,7 @@ show_output() {
 
 scenario_connectivity() {
   echo "  [connectivity] agent responds to a prompt"
-  SCENARIO_WS="$(mktemp -d)"
+  SCENARIO_WS="$(make_workspace)"
   SCENARIO_OUT="$OUTPUT_DIR/${AGENT}-connectivity.txt"
   SCENARIO_EXIT=0
   run_harness "$SCENARIO_WS" "Reply with exactly: OK" "$SCENARIO_OUT" || SCENARIO_EXIT=$?
@@ -115,8 +126,9 @@ scenario_sentinel_edit() {
   local token
   token="$(random_token)"
 
-  SCENARIO_WS="$(mktemp -d)"
+  SCENARIO_WS="$(make_workspace)"
   printf 'VERSION = "1.0.0"\nSECRET_KEY = "%s"\n' "$token" > "$SCENARIO_WS/config.py"
+  chmod 0666 "$SCENARIO_WS/config.py"
   SCENARIO_OUT="$OUTPUT_DIR/${AGENT}-sentinel-edit.txt"
   SCENARIO_EXIT=0
 
@@ -162,9 +174,10 @@ scenario_multi_file() {
   token_a="ALPHA-$(random_token)"
   token_b="BETA-$(random_token)"
 
-  SCENARIO_WS="$(mktemp -d)"
+  SCENARIO_WS="$(make_workspace)"
   printf '%s\n' "$token_a" > "$SCENARIO_WS/alpha.txt"
   printf '%s\n' "$token_b" > "$SCENARIO_WS/beta.txt"
+  chmod 0666 "$SCENARIO_WS/alpha.txt" "$SCENARIO_WS/beta.txt"
   SCENARIO_OUT="$OUTPUT_DIR/${AGENT}-multi-file.txt"
   SCENARIO_EXIT=0
 
