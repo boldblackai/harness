@@ -99,7 +99,7 @@ jobs:
           for AGENT in pi opencode hermes; do
             echo "=== Testing $AGENT adapter ==="
             if timeout 120 node bin/harness.js --agent "$AGENT" \
-              -m openrouter/auto \
+              -m openrouter/google/gemini-3.1-flash-lite \
               -p "Reply with exactly: OK" \
               -e /tmp/harness.env \
               > "integration-output/${AGENT}.txt" 2>&1; then
