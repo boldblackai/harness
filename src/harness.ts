@@ -522,6 +522,7 @@ Options:
 
 Environment variables:
   HARNESS_IMAGE_TAG           Override the Docker image tag (defaults to package version)
+  HARNESS_REGISTRY            Override the container registry (defaults to ghcr.io/boldblackai/harness)
   HARNESS_CONTAINER_RUNTIME   Container runtime to use: docker (default) or apple (Apple container CLI)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
@@ -533,7 +534,7 @@ You can also pipe text to harness as an implied -p:
 `;
 
 const workspace = process.cwd();
-const REGISTRY = "ghcr.io/boldblackai/harness";
+const REGISTRY = process.env.HARNESS_REGISTRY ?? "ghcr.io/boldblackai/harness";
 const VERSION: string = require("../package.json").version;
 const IMAGE_TAG = process.env.HARNESS_IMAGE_TAG ?? VERSION;
 

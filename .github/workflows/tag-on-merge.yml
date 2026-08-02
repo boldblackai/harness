@@ -9,7 +9,14 @@ permissions:
   id-token: write
 
 jobs:
+  smoke:
+    name: Integration Smoke Tests
+    uses: ./.github/workflows/integration-smoke.yml
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
   tag-and-release:
+    needs: smoke
     if: startsWith(github.event.head_commit.message, 'release v')
     runs-on: ubuntu-latest
     steps:
