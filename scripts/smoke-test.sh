@@ -163,6 +163,11 @@ scenario_multi_file() {
   printf '%s\n' "$token_a" > "$SCENARIO_WS/alpha.txt"
   printf '%s\n' "$token_b" > "$SCENARIO_WS/beta.txt"
   chmod 0666 "$SCENARIO_WS/alpha.txt" "$SCENARIO_WS/beta.txt"
+  # Pre-create combined.txt so hermes's write_file preserves its mode
+  # (0666) via chmod --reference. Without this, hermes creates new files
+  # with mktemp's default 0600, which the host CI user cannot read.
+  touch "$SCENARIO_WS/combined.txt"
+  chmod 0666 "$SCENARIO_WS/combined.txt"
   SCENARIO_OUT="$OUTPUT_DIR/${AGENT}-multi-file.txt"
   SCENARIO_EXIT=0
 
