@@ -47,9 +47,10 @@ run_harness() {
   local workspace="$1"
   local prompt="$2"
   local outfile="$3"
+  local rc
 
   (
-    cd "$workspace" || return 1
+    cd "$workspace" || exit 1
     timeout "$TIMEOUT" "$NODE_BIN" "$HARNESS_BIN" \
       --agent "$AGENT" \
       -m "$MODEL" \
@@ -57,11 +58,17 @@ run_harness() {
       -e "$ENV_FILE" \
       > "$outfile" 2>&1
   )
+  rc=$?
 
   # The container runs as a different UID; files it creates are not
   # readable by the host user. Relax permissions after the run so the
   # assertion grep calls can read agent-created files.
-  chmod -R a+r "$workspace" 2>/dev/null
+  # || true: chmod may fail on container-created files we don't own;
+  # that's OK — the assertions will still try, and we must not let it
+  # mask the real agent exit code.
+  chmod -R a+r "$workspace" 2>/dev/null || true
+
+  return "$rc"
 }
 
 make_workspace() {
