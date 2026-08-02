@@ -23,5 +23,5 @@ jobs:
             https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
           chmod +x /usr/local/bin/hadolint
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
-            | bash -s -- 1.7.7 /usr/local/bin
+            | bash -s -- 1.7.12 /usr/local/bin
       - run: pnpm lint

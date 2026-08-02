@@ -1,0 +1,159 @@
+name: Integration Smoke Tests
+
+on:
+  workflow_call:
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.runtime }} (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            runtime: docker
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            runtime: docker
+            platform: linux/arm64/v8
+          - runner: macos-26
+            runtime: apple
+            platform: linux/arm64/v8
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      # --- Build harness CLI ---
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Build harness CLI
+        run: pnpm install --frozen-lockfile && pnpm build
+
+      # --- Local registry (push target for image builds) ---
+
+      - name: Start local registry
+        run: docker run -d -p 5000:5000 --name registry registry:2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        with:
+          driver-opts: network=host
+
+      # --- Build images to local registry ---
+
+      - name: Build base image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: localhost:5000/harness:test
+
+      - name: Build opencode variant
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: Dockerfile.opencode
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-args: BASE_IMAGE=localhost:5000/harness:test
+          tags: localhost:5000/harness:opencode-test
+
+      - name: Build hermes variant
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: Dockerfile.hermes
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-args: BASE_IMAGE=localhost:5000/harness:test
+          tags: localhost:5000/harness:hermes-test
+
+      # --- Apple Container setup (macOS only) ---
+
+      - name: Install Apple Container
+        if: matrix.runtime == 'apple'
+        run: |
+          if ! command -v container &>/dev/null; then
+            brew install container
+          fi
+          container system start
+
+      - name: Pre-pull images for Apple Container
+        if: matrix.runtime == 'apple'
+        run: |
+          for tag in test opencode-test hermes-test; do
+            echo "Pulling localhost:5000/harness:$tag ..."
+            container image pull "localhost:5000/harness:$tag"
+          done
+
+      # --- Write env file ---
+
+      - name: Write env file
+        run: |
+          umask 077
+          printf 'OPENROUTER_API_KEY=%s\n' "${{ secrets.OPENROUTER_API_KEY }}" > /tmp/harness.env
+
+      # --- Run smoke tests ---
+
+      - name: Run smoke tests
+        env:
+          HARNESS_REGISTRY: localhost:5000/harness
+          HARNESS_IMAGE_TAG: test
+          HARNESS_CONTAINER_RUNTIME: ${{ matrix.runtime }}
+        run: |
+          set -o pipefail
+          mkdir -p integration-output
+          FAIL=0
+
+          for AGENT in pi opencode hermes; do
+            echo "=== Testing $AGENT adapter ==="
+            if timeout 120 node bin/harness.js --agent "$AGENT" \
+              -m deepseek/deepseek-v4-flash-0731 \
+              -p "Reply with exactly: OK" \
+              -e /tmp/harness.env \
+              > "integration-output/${AGENT}.txt" 2>&1; then
+              if [ -s "integration-output/${AGENT}.txt" ]; then
+                echo "PASS: $AGENT — exit 0, non-empty output"
+              else
+                echo "FAIL: $AGENT — exit 0 but empty output"
+                FAIL=1
+              fi
+            else
+              EXIT_CODE=$?
+              if [ "$EXIT_CODE" -eq 124 ]; then
+                echo "FAIL: $AGENT — timed out after 120s"
+              else
+                echo "FAIL: $AGENT — exit code $EXIT_CODE"
+              fi
+              echo "--- output ---"
+              cat "integration-output/${AGENT}.txt"
+              FAIL=1
+            fi
+            echo ""
+          done
+
+          exit "$FAIL"
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: integration-output-${{ matrix.runtime }}-${{ matrix.runner }}
+          path: integration-output/
+          if-no-files-found: warn
+          retention-days: 7
