@@ -21,17 +21,13 @@ AGENT="${1:?usage: smoke-test.sh <agent> [model]}"
 ENV_FILE="${ENV_FILE:-/tmp/harness.env}"
 TIMEOUT="${TIMEOUT:-120}"
 
-# Per-adapter model selection.
+# Bare model ID without the "openrouter/" provider prefix.
 #
-# Hermes detects the provider from the "openrouter/" prefix but passes
-# the full string to the API, which OpenRouter rejects (it expects just
-# the model part without the provider prefix). Passing the bare model
-# ID without the prefix works as a diagnostic — if it passes, the bug
-# is confirmed in how harness passes model names to hermes.
-case "$AGENT" in
-  hermes) MODEL="${2:-google/gemini-3.1-flash-lite}" ;;
-  *)      MODEL="${2:-openrouter/google/gemini-3.1-flash-lite}" ;;
-esac
+# Hermes rejects the prefixed form (HTTP 400: not a valid model ID).
+# Testing whether pi and opencode also accept the bare form — if so,
+# the prefix is unnecessary for any adapter and harness can pass it
+# as-is to all three.
+MODEL="${2:-google/gemini-3.1-flash-lite}"
 
 NODE_BIN="${NODE_BIN:-node}"
 HARNESS_BIN="$(pwd)/bin/harness.js"
