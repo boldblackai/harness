@@ -21,13 +21,17 @@ AGENT="${1:?usage: smoke-test.sh <agent> [model]}"
 ENV_FILE="${ENV_FILE:-/tmp/harness.env}"
 TIMEOUT="${TIMEOUT:-120}"
 
-# Bare model ID without the "openrouter/" provider prefix.
+# Per-adapter model selection.
 #
-# Hermes rejects the prefixed form (HTTP 400: not a valid model ID).
-# Testing whether pi and opencode also accept the bare form — if so,
-# the prefix is unnecessary for any adapter and harness can pass it
-# as-is to all three.
-MODEL="${2:-google/gemini-3.1-flash-lite}"
+# OpenRouter model IDs have a provider prefix (openrouter/google/...).
+# Hermes rejects the prefixed form (HTTP 400) — it detects the provider
+# from the prefix but sends the full string to the API. Opencode
+# requires the prefix — the bare form causes "Unexpected server error".
+# Pi accepts both forms.
+case "$AGENT" in
+  hermes) MODEL="${2:-stepfun/step-3.5-flash}" ;;
+  *)      MODEL="${2:-openrouter/stepfun/step-3.5-flash}" ;;
+esac
 
 NODE_BIN="${NODE_BIN:-node}"
 HARNESS_BIN="$(pwd)/bin/harness.js"
@@ -151,7 +155,7 @@ scenario_multi_file() {
   SCENARIO_EXIT=0
 
   run_harness "$SCENARIO_WS" \
-    "Read alpha.txt and beta.txt, then create a file called combined.txt that contains the contents of both files." \
+    "Read the files alpha.txt and beta.txt using the read_file tool. Then create a file called combined.txt whose contents are the exact text from alpha.txt followed by the exact text from beta.txt." \
     "$SCENARIO_OUT" || SCENARIO_EXIT=$?
 
   if [ "$SCENARIO_EXIT" -ne 0 ]; then
