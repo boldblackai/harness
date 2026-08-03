@@ -144,6 +144,25 @@ class DockerRuntime implements ContainerRuntime {
   }
 }
 
+const HOST_DOCKER_INTERNAL = "host.docker.internal";
+// Documentation-range IP apple/container uses to route a custom DNS name to the
+// host's localhost. See apple/container how-to: "Access a host service from a
+// container".
+const APPLE_HOST_LOCALHOST_IP = "203.0.113.113";
+
+function appleHostDockerInternalDnsConfigured(): boolean {
+  try {
+    const out = execFileSync("container", ["system", "dns", "list"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    }).toString();
+    return out.includes(HOST_DOCKER_INTERNAL);
+  } catch {
+    // If we cannot inspect DNS config, do not block the run.
+    return true;
+  }
+}
+
 class AppleContainerRuntime implements ContainerRuntime {
   binary(): string {
     return "container";
@@ -222,6 +241,11 @@ class AppleContainerRuntime implements ContainerRuntime {
         "harness: HARNESS_CONTAINER_RUNTIME=apple requires the `container` CLI (Apple container, v1.0.0+). Install from https://github.com/apple/container/releases and run `container system start`, or unset HARNESS_CONTAINER_RUNTIME to use docker.",
       );
       process.exit(1);
+    }
+    if (!appleHostDockerInternalDnsConfigured()) {
+      console.error(
+        `harness: ${HOST_DOCKER_INTERNAL} is not configured for Apple's container runtime.\nLocal services on the Mac (e.g. LM Studio on :1234) will not be reachable from the container.\nOne-time fix (requires administrator):\n  sudo container system dns create ${HOST_DOCKER_INTERNAL} --localhost ${APPLE_HOST_LOCALHOST_IP}\nSee https://github.com/apple/container/blob/main/docs/how-to.md#access-a-host-service-from-a-container`,
+      );
     }
   }
 }
@@ -325,7 +349,9 @@ class HermesAdapter implements AgentAdapter {
   }
 
   contextDir(): string {
-    return "/home/harness/.hermes";
+    // Hermes reads AGENTS.md / CLAUDE.md from the project cwd only, not
+    // ~/.hermes/. Mount global context files into /workspace so they apply.
+    return "/workspace";
   }
 }
 
