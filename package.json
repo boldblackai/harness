@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/boldblackai/harness.git"
   },
-  "packageManager": "pnpm@10.34.5",
+  "packageManager": "pnpm@11.17.0",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
