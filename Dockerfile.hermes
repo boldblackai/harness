@@ -102,7 +102,7 @@ RUN apt-get update && \
     && git -C /opt/hermes-agent apply /tmp/hermes-agent-64189.patch \
     && git -C /opt/hermes-agent apply /tmp/hermes-agent-slack-invalid-blocks.patch \
     && uv venv /opt/hermes-agent/venv --python python3 \
-    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack] "python-telegram-bot==22.6" "faster-whisper==1.2.1" \
+    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
     && cd /opt/hermes-agent/web && npm install && npm run build && cd / \
     && chown -R harness:harness /opt/hermes-agent \

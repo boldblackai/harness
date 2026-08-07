@@ -126,8 +126,8 @@ spec:
               value: "1"
             - name: HERMES_HOME
               value: "/home/harness/.hermes"
-            # Persist the faster-whisper model cache across restarts.
-            # Without this, the model re-downloads (~142 MB) on every pod restart.
+            # Persist the HuggingFace model cache (faster-whisper STT, kokoro-onnx TTS) across restarts.
+            # Without this, models re-download on every pod restart.
             - name: HF_HOME
               value: "/home/harness/.hermes/.cache/huggingface"
             #
