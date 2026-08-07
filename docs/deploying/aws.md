@@ -74,7 +74,7 @@ Then update each one with the real value:
 
 ### 3. Create EFS for persistent state
 
-Hermes stores sessions, memories, skills, the faster-whisper model cache, and `config.yaml` under `/home/harness/.hermes`. EFS is the right primitive: it survives task restarts, supports the `uid:gid=1000:1000` non-root `harness` user, and works across AZs.
+Hermes stores sessions, memories, skills, the HuggingFace model cache (faster-whisper STT, kokoro-onnx TTS), and `config.yaml` under `/home/harness/.hermes`. EFS is the right primitive: it survives task restarts, supports the `uid:gid=1000:1000` non-root `harness` user, and works across AZs.
 
 ```bash
 EFS_ID=$(aws efs create-file-system --region "$AWS_REGION" \
