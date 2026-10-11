@@ -5,7 +5,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 USER root
 
-RUN pnpm install -g opencode-ai@1.18.32 && \
+RUN pnpm install -g opencode-ai@1.18.34 && \
     cd "$(pnpm list -g --parseable --depth 0 | grep '/opencode-ai$')" && node postinstall.mjs && \
     pnpm store prune && \
     rm -rf ~/.cache/pnpm ~/.npm
