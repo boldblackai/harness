@@ -15,6 +15,7 @@ make image            # Build all Docker images (base + opencode + hermes varian
 make image-base       # Build base image only
 make image-opencode   # Build opencode variant
 make image-hermes     # Build hermes variant
+make image-egress-proxy # Build the egress gateway image (squid)
 pnpm link --global    # Make `harness` CLI available globally for local testing
 pnpm lint             # Run all linters (biome, markdownlint, shellcheck, hadolint, actionlint)
 pnpm format           # Auto-format with Biome
@@ -42,10 +43,13 @@ The project uses a **multi-image architecture** with a shared base and agent-spe
 | Base (pi) | `Dockerfile` | `<version>` | Debian stable-slim, Node.js v24, pnpm, `git`, `pi-coding-agent`, `gh`, `mise`, `tini`, `fd`, `ripgrep`, `jq` |
 | OpenCode | `Dockerfile.opencode` | `opencode-<version>` | Base + `opencode-ai` |
 | Hermes | `Dockerfile.hermes` | `hermes-<version>` | Base + `uv`, `cosign`, `tirith`, Python venv with `hermes-agent` (incl. MCP SDK), `python-telegram-bot`, `croniter`, `faster-whisper` (STT), `kokoro-onnx` (TTS) |
+| Egress proxy | `Dockerfile.egress-proxy` | `egress-proxy-<version>` | Debian stable-slim + `squid` (no base image); gateway for `--egress` — squid.conf is generated per run by the CLI and mounted in, nothing baked in |
 
 The image tag is selected at runtime based on `--agent`: pi uses `<version>`, others use `<agent>-<version>`.
 
 ### Key subsystems
+
+**Egress control (opt-in, two tiers):** `--network <name>` (Tier 1) passes an existing container network through to the runtime verbatim (`HARNESS_NETWORK` env; `--network host` warns). `--egress <allowlist>` (Tier 2, docker-only — the apple runtime fails closed) creates a per-run `--internal` network plus a squid egress gateway container (`egress-proxy-<version>` image) attached to both the internal network (static IP `.2`) and the default bridge. The agent container gets `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` (+`NODE_USE_ENV_PROXY=1`) injected after `--env-file` (last wins), and on Linux `--add-host host.docker.internal:host-gateway`. The fence is the topology (`--internal` = no external route except via the gateway), not the env vars. Allowlist grammar: exact host, `.domain`/`*.domain` suffix, `host.docker.internal[:port]` (direct, never proxied), `@file`, or `none` (airgap: internal network, no gateway). Non-443 ports are rejected in v1 (raw-TCP deferred — see `rfcs/2026-10-08_egress_allowlist.md`). Subnet pool `192.0.2.0/24` in /29s, override with `HARNESS_EGRESS_SUBNET`; stale `harness-egress-*` networks are swept on the next `--egress` run. `--egress` + `--network` is a hard error.
 
 **Cosign image verification (`verifyImage`):** On every run (unless `--no-verify` or `HARNESS_IMAGE_TAG` is set), harness verifies the container image was signed by the official CI workflow and carries a valid SLSA provenance attestation. Verified digests are cached at `~/.cache/harness/cosign-verified.json`. Requires `cosign` installed on the host.
 
@@ -102,6 +106,7 @@ E2E tests in `tests/e2e/*.test.mjs` (with shared helpers in `helpers.mjs`) use a
 - `--model` handling (local vs env-file mode, `--provider ollama` injection)
 - Cloud/local mode (`HARNESS_CLOUD_MODE`, `--local` flag)
 - User skills mounting (`~/.agents/skills`, `~/.claude/skills`, `--no-skills` flag)
+- Egress control (`tests/e2e/egress.test.mjs`, recording docker shim): `--egress` lifecycle (network create/rm, gateway run, bridge attach), proxy env ordering vs `--env-file`, entry-grammar validation errors, `--egress`+`--network` mutual exclusion, apple-runtime fail-closed, airgap mode, `HARNESS_EGRESS_SUBNET` handling, unchanged-default-argv regression
 
 Run with: `pnpm test:e2e` (requires `pnpm build` first).
 

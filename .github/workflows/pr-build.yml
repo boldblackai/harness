@@ -55,3 +55,12 @@ jobs:
           push: true
           build-args: BASE_IMAGE=localhost:5000/harness:base
           tags: localhost:5000/harness:hermes
+
+      - name: Build egress-proxy image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: Dockerfile.egress-proxy
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: localhost:5000/harness:egress-proxy

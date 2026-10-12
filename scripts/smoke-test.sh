@@ -56,6 +56,7 @@ run_harness() {
       -m "$MODEL" \
       -p "$prompt" \
       -e "$ENV_FILE" \
+      ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
       > "$outfile" 2>&1
   )
   rc=$?
@@ -203,6 +204,79 @@ scenario_multi_file() {
   fi
 }
 
+# --- scenario 3 (opt-in): egress allowlist enforcement -------------------------
+# Gated behind SMOKE_EGRESS=1 (needs real docker; two extra agent runs).
+#
+# Seeds probe.mjs (a Node fetch one-shot; the base image ships Node 24 and
+# harness injects NODE_USE_ENV_PROXY=1 with --egress, so fetch honors the
+# squid gateway) and runs the agent twice under
+# --egress "openrouter.ai,example.com" (openrouter.ai keeps the model API
+# reachable so the agent can process the prompt at all):
+#   positive: probe https://example.com  -> "OK 200" (allowlisted, proxied)
+#   negative: probe https://iana.org     -> "ERR ..." (proxy-denied)
+
+scenario_egress() {
+  echo "  [egress] allowlisted destination reachable, non-allowlisted denied"
+  local allowlist="openrouter.ai,example.com"
+
+  # One shared probe script; the target URL is argv[2].
+  local probe_ok_ws probe_deny_ws probe_ok_out probe_deny_out ok_result deny_result
+  probe_ok_ws="$(make_workspace)"
+  seed_probe "$probe_ok_ws"
+  probe_ok_out="$OUTPUT_DIR/${AGENT}-egress-allow.txt"
+
+  HARNESS_EXTRA_ARGS="--egress $allowlist" run_harness "$probe_ok_ws" \
+    'Run this shell command from the workspace root and let it finish: node probe.mjs https://example.com > result.txt 2>&1' \
+    "$probe_ok_out"
+  ok_result="$(cat "$probe_ok_ws/result.txt" 2>/dev/null | tail -1)"
+
+  probe_deny_ws="$(make_workspace)"
+  seed_probe "$probe_deny_ws"
+  probe_deny_out="$OUTPUT_DIR/${AGENT}-egress-deny.txt"
+
+  # The negative run's agent exit code can legitimately be non-zero (the
+  # command it ran failed, as intended) — only the probe output matters.
+  HARNESS_EXTRA_ARGS="--egress $allowlist" run_harness "$probe_deny_ws" \
+    'Run this shell command from the workspace root and let it finish: node probe.mjs https://iana.org > result.txt 2>&1' \
+    "$probe_deny_out" || true
+  deny_result="$(cat "$probe_deny_ws/result.txt" 2>/dev/null | tail -1)"
+
+  if [ -z "$ok_result" ] || [ -z "$deny_result" ]; then
+    check_fail "egress — probe result.txt missing (allow='${ok_result:-<none>}' deny='${deny_result:-<none>}'); see $probe_ok_out / $probe_deny_out"
+    return
+  fi
+
+  if printf '%s' "$ok_result" | grep -q '^OK '; then
+    check_pass "egress — allowlisted example.com reachable ($ok_result)"
+  else
+    check_fail "egress — allowlisted example.com NOT reachable (got '$ok_result')"
+  fi
+
+  if printf '%s' "$deny_result" | grep -q '^ERR '; then
+    check_pass "egress — non-allowlisted iana.org denied ($deny_result)"
+  else
+    check_fail "egress — non-allowlisted iana.org NOT denied (got '$deny_result')"
+  fi
+}
+
+# Seed a probe workspace: probe.mjs (Node fetch one-shot) + pre-created
+# result.txt (0666 so container-written output stays host-readable).
+seed_probe() {
+  local ws="$1"
+  cat > "$ws/probe.mjs" <<'PROBE'
+const target = process.argv[2];
+try {
+  const r = await fetch(target);
+  console.log("OK " + r.status);
+} catch (e) {
+  console.log("ERR " + ((e && e.cause && e.cause.code) || e.message));
+}
+PROBE
+  chmod 0666 "$ws/probe.mjs"
+  touch "$ws/result.txt"
+  chmod 0666 "$ws/result.txt"
+}
+
 # --- run all scenarios --------------------------------------------------------
 
 echo ""
@@ -211,6 +285,9 @@ echo ""
 
 scenario_sentinel_edit
 scenario_multi_file
+if [ "${SMOKE_EGRESS:-0}" = "1" ]; then
+  scenario_egress
+fi
 
 echo ""
 echo "Results for $AGENT: $PASS passed, $FAIL failed"
