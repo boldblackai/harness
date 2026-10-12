@@ -19,6 +19,7 @@ icon: lucide/settings
 | `--no-skills` |       | Disable mounting user skills directories |
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
+| `--network`   |       | Attach the container to an existing network (e.g. one wired to a corp proxy) |
 | `--help`      | `-h`  | Show help |
 
 ## Environment variables
@@ -26,6 +27,7 @@ icon: lucide/settings
 | Variable             | Description |
 |----------------------|-------------|
 | `HARNESS_IMAGE_TAG`  | Override the Docker image tag (defaults to the package version). Setting this implies `--no-verify`. |
+| `HARNESS_NETWORK`    | Default for `--network` (the CLI flag wins). |
 | `XDG_DATA_HOME`      | Override the base directory for persistence data (defaults to `~/.local/share`). |
 | `XDG_CACHE_HOME`     | Override the base directory for cosign cache (defaults to `~/.cache`). |
 

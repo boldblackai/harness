@@ -34,6 +34,7 @@ interface Args extends ParsedArgs {
   a?: string;
   volumes?: string[];
   port?: string[];
+  network?: string;
 }
 
 interface AgentOptions {
@@ -60,6 +61,7 @@ interface RunInput {
   volumeArgs: string[];
   userVolumeArgs: string[];
   portArgs: string[]; // --port publish flags (-p <spec>), runtime-agnostic
+  network: string | null; // --network passthrough (egress RFC Tier 1)
   workdir: string;
   image: string;
   containerCmd: string[];
@@ -134,6 +136,7 @@ class DockerRuntime implements ContainerRuntime {
       "no-new-privileges:true",
       "--security-opt",
       `seccomp=${SECCOMP_PROFILE}`,
+      ...(input.network ? ["--network", input.network] : []),
       ...input.envFileArgs,
       ...input.envArgs,
       ...input.volumeArgs,
@@ -226,6 +229,8 @@ class AppleContainerRuntime implements ContainerRuntime {
     // is only a minor in-guest defense-in-depth loss. Capability
     // restrictions ARE supported, so --cap-drop=ALL --cap-add=NET_RAW stays.
     const ttyFlags = input.interactive ? ["-i", "-t"] : ["-i"];
+    // --network is forwarded identically under both runtimes (Tier 1
+    // passthrough; apple/container accepts --network natively).
     return [
       "run",
       "--rm",
@@ -234,6 +239,7 @@ class AppleContainerRuntime implements ContainerRuntime {
       "ALL",
       "--cap-add",
       "NET_RAW",
+      ...(input.network ? ["--network", input.network] : []),
       ...input.envFileArgs,
       ...input.envArgs,
       ...input.volumeArgs,
@@ -598,12 +604,14 @@ Options:
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
   --local                Force local mode even with -e (use LM Studio / local defaults)
   --mount-entire-home    Allow running from your home directory (mounts all of $HOME as the workspace)
+  --network <name>       Attach the container to an existing network (e.g. one wired to a corp proxy)
   -h, --help             Show this help message
 
 Environment variables:
   HARNESS_IMAGE_TAG           Override the Docker image tag (defaults to package version)
   HARNESS_REGISTRY            Override the container registry (defaults to ghcr.io/boldblackai/harness)
   HARNESS_CONTAINER_RUNTIME   Container runtime: auto (default; prefers Apple container on macOS), docker, apple (deprecated)
+  HARNESS_NETWORK             Default for --network (CLI flag wins)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
 
@@ -657,6 +665,7 @@ const MINIMIST_OPTS = {
     "a",
     "volumes",
     "port",
+    "network",
   ],
   alias: {
     e: "env-file",
@@ -814,6 +823,30 @@ for (const spec of portArgList) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Egress control (rfcs/2026-10-08_egress_allowlist.md), Tier 1: pass an
+// existing container network through to the runtime. Brings your own
+// topology (e.g. a network wired to an existing corp proxy). Strictly
+// opt-in; without the flag the argv is unchanged.
+// ---------------------------------------------------------------------------
+
+const networkArg: string | null = (() => {
+  const flag = argv.network ?? process.env.HARNESS_NETWORK ?? null;
+  if (flag !== null && flag.trim() === "") {
+    console.error(
+      "harness: --network requires a non-empty network name (or unset HARNESS_NETWORK)",
+    );
+    process.exit(1);
+  }
+  return flag;
+})();
+
+if (networkArg === "host") {
+  console.error(
+    "harness: WARNING: --network host removes network isolation between the container and the host.",
+  );
+}
+
 async function run(prompt: string | null): Promise<void> {
   const runtime = selectRuntime();
   runtime.ensureReady();
@@ -957,6 +990,7 @@ async function run(prompt: string | null): Promise<void> {
     volumeArgs,
     userVolumeArgs,
     portArgs,
+    network: networkArg,
     workdir: "/workspace",
     image,
     containerCmd,

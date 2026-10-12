@@ -221,6 +221,18 @@ One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence 
 
 If an old `.harness/` directory exists in your working directory, harness will emit a deprecation warning with migration instructions.
 
+## Egress control
+
+By default the agent container runs on the default bridge with unrestricted outbound access. `--network` lets you attach it to an existing network instead — for example a network wired to an existing corporate proxy — bringing your own egress topology.
+
+```bash
+harness --network corp-proxy-net
+```
+
+The value is forwarded verbatim to the container runtime (`docker run --network <name>` / `container run --network <name>`); no harness-side validation beyond non-empty. `HARNESS_NETWORK` provides a default (the CLI flag wins). `--network host` proceeds with a warning that host networking removes network isolation.
+
+Harness-managed allowlisting (`--egress`, per [RFC: opt-in egress allowlisting](https://github.com/boldblackai/harness/blob/main/rfcs/2026-10-08_egress_allowlist.md)) is planned but not yet implemented.
+
 ## Reference
 
 ### CLI flags
@@ -240,6 +252,7 @@ If an old `.harness/` directory exists in your working directory, harness will e
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
 | `--mount-entire-home` | | Allow running from your home directory (mounts all of `$HOME` as the workspace) |
+| `--network`    |       | Attach the container to an existing network (e.g. one wired to a corp proxy); see [Egress control](#egress-control) |
 | `--help`      | `-h`  | Show help |
 
 ### Environment variables
@@ -248,6 +261,7 @@ If an old `.harness/` directory exists in your working directory, harness will e
 |-----------------------------|-------------|
 | `HARNESS_IMAGE_TAG`         | Override the Docker image tag (defaults to the package version). Setting this implies `--no-verify`. |
 | `HARNESS_CONTAINER_RUNTIME` | Container runtime: `auto` (default — on macOS, prefers Apple's `container` CLI if on PATH; docker everywhere else), `docker` (force docker), or `apple` (deprecated explicit alias; warns). |
+| `HARNESS_NETWORK`           | Default for `--network` (the CLI flag wins). |
 | `XDG_DATA_HOME`             | Override the base directory for persistence data (defaults to `~/.local/share`). |
 | `XDG_CACHE_HOME`            | Override the base directory for the cosign cache (defaults to `~/.cache`). |
 
