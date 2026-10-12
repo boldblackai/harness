@@ -36,6 +36,14 @@ esac
 NODE_BIN="${NODE_BIN:-node}"
 HARNESS_BIN="$(pwd)/bin/harness.js"
 
+# timeout(1) is GNU coreutils: always on Linux, absent on a stock macOS
+# (coreutils installs it as gtimeout). Resolve whichever exists; without
+# one, runs are unguarded by a wall clock.
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+if [ -z "$TIMEOUT_BIN" ]; then
+  echo "note: timeout(1) not found (macOS: brew install coreutils); running without time limits" >&2
+fi
+
 mkdir -p integration-output
 OUTPUT_DIR="$(pwd)/integration-output"
 PASS=0
@@ -51,13 +59,23 @@ run_harness() {
 
   (
     cd "$workspace" || exit 1
-    timeout "$TIMEOUT" "$NODE_BIN" "$HARNESS_BIN" \
-      --agent "$AGENT" \
-      -m "$MODEL" \
-      -p "$prompt" \
-      -e "$ENV_FILE" \
-      ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
-      > "$outfile" 2>&1
+    if [ -n "$TIMEOUT_BIN" ]; then
+      "$TIMEOUT_BIN" "$TIMEOUT" "$NODE_BIN" "$HARNESS_BIN" \
+        --agent "$AGENT" \
+        -m "$MODEL" \
+        -p "$prompt" \
+        -e "$ENV_FILE" \
+        ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
+        > "$outfile" 2>&1
+    else
+      "$NODE_BIN" "$HARNESS_BIN" \
+        --agent "$AGENT" \
+        -m "$MODEL" \
+        -p "$prompt" \
+        -e "$ENV_FILE" \
+        ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
+        > "$outfile" 2>&1
+    fi
   )
   rc=$?
 
@@ -219,6 +237,13 @@ scenario_egress() {
   echo "  [egress] allowlisted destination reachable, non-allowlisted denied"
   local allowlist="openrouter.ai,example.com"
 
+  # --egress is docker-only and macOS auto-prefers apple/container when it
+  # is on PATH, which fails closed by design. run_harness evaluates its
+  # command in the current shell, so exporting here scopes the override to
+  # these two invocations (the sentinel/multi-file scenarios above already
+  # ran without it).
+  export HARNESS_CONTAINER_RUNTIME=docker
+
   # One shared probe script; the target URL is argv[2].
   local probe_ok_ws probe_deny_ws probe_ok_out probe_deny_out ok_result deny_result
   probe_ok_ws="$(make_workspace)"
@@ -240,6 +265,7 @@ scenario_egress() {
     'Run this shell command from the workspace root and let it finish: node probe.mjs https://iana.org > result.txt 2>&1' \
     "$probe_deny_out" || true
   deny_result="$(cat "$probe_deny_ws/result.txt" 2>/dev/null | tail -1)"
+  unset HARNESS_CONTAINER_RUNTIME
 
   if [ -z "$ok_result" ] || [ -z "$deny_result" ]; then
     check_fail "egress — probe result.txt missing (allow='${ok_result:-<none>}' deny='${deny_result:-<none>}'); see $probe_ok_out / $probe_deny_out"
