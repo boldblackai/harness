@@ -265,7 +265,14 @@ scenario_egress() {
   deny_result="$(cat "$probe_deny_ws/result.txt" 2>/dev/null | tail -1)"
 
   if [ -z "$ok_result" ] || [ -z "$deny_result" ]; then
-    check_fail "egress — probe result.txt missing (allow='${ok_result:-<none>}' deny='${deny_result:-<none>}'); see $probe_ok_out / $probe_deny_out"
+    check_fail "egress — probe result.txt missing (allow='${ok_result:-<none>}' deny='${deny_result:-<none>}')"
+    echo "    --- allow probe run output (tail) ---"
+    tail -30 "$probe_ok_out" 2>/dev/null | sed 's/^/    /'
+    echo "    --- deny probe run output (tail) ---"
+    tail -30 "$probe_deny_out" 2>/dev/null | sed 's/^/    /'
+    echo "    --- live egress state (should be empty after cleanup) ---"
+    docker network ls --format '{{.Name}}' 2>/dev/null | grep harness-egress | sed 's/^/    network: /'
+    docker ps -a --format '{{.Names}}' 2>/dev/null | grep harness-egress | sed 's/^/    container: /'
     return
   fi
 
