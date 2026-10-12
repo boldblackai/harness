@@ -22,7 +22,7 @@
     "lint:ts": "biome check .",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\"",
     "lint:sh": "shellcheck setup-env.sh entrypoint.sh entrypoint-opencode.sh entrypoint-hermes.sh",
-    "lint:docker": "hadolint Dockerfile Dockerfile.opencode Dockerfile.hermes",
+    "lint:docker": "hadolint Dockerfile Dockerfile.opencode Dockerfile.hermes Dockerfile.egress-proxy",
     "lint:actions": "actionlint",
     "format": "biome format --write .",
     "test:e2e:cli": "node --test tests/e2e/*.test.mjs",

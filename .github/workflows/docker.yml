@@ -167,6 +167,12 @@ jobs:
           - variant: hermes
             runner: ubuntu-24.04-arm
             platform: linux/arm64/v8
+          - variant: egress-proxy
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - variant: egress-proxy
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64/v8
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -219,7 +225,7 @@ jobs:
     needs: build-variant
     strategy:
       matrix:
-        variant: [opencode, hermes]
+        variant: [opencode, hermes, egress-proxy]
     runs-on: ubuntu-latest
     permissions:
       contents: read
