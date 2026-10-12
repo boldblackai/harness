@@ -64,6 +64,11 @@ run_harness() {
 
   (
     cd "$workspace" || exit 1
+    # </dev/null: force non-interactive runs. The script's own stdin is the
+    # caller's TTY; without this redirect node/docker try to allocate a raw
+    # terminal, which fails under GNU timeout's process-group isolation
+    # ("unable to set IO streams as raw terminal: interrupted system call")
+    # and hangs until the wall clock fires.
     if [ -n "$TIMEOUT_BIN" ]; then
       "$TIMEOUT_BIN" "$TIMEOUT" "$NODE_BIN" "$HARNESS_BIN" \
         --agent "$AGENT" \
@@ -71,6 +76,7 @@ run_harness() {
         -p "$prompt" \
         -e "$ENV_FILE" \
         ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
+        < /dev/null \
         > "$outfile" 2>&1
     else
       "$NODE_BIN" "$HARNESS_BIN" \
@@ -79,6 +85,7 @@ run_harness() {
         -p "$prompt" \
         -e "$ENV_FILE" \
         ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
+        < /dev/null \
         > "$outfile" 2>&1
     fi
   )
