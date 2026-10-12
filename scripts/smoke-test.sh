@@ -44,6 +44,35 @@ if [ -z "$TIMEOUT_BIN" ]; then
   echo "note: timeout(1) not found (macOS: brew install coreutils); running without time limits" >&2
 fi
 
+# Preflight: the resolved images must exist locally before burning scenarios on
+# them. HARNESS_IMAGE_TAG composes per-agent tags ("latest" -> "hermes-latest"),
+# so a host with only the pi image tagged "latest" fails all hermes scenarios
+# with an opaque docker error. Fail fast with the exact build command instead.
+if [ -n "${HARNESS_IMAGE_TAG:-}" ]; then
+  case "$AGENT" in
+    pi)     PREFIX="" ;;
+    *)      PREFIX="${AGENT}-" ;;
+  esac
+  REGISTRY="${HARNESS_REGISTRY:-ghcr.io/boldblackai/harness}"
+  # mirrors getImage() in src/harness.ts
+  MISSING="$REGISTRY:${PREFIX}${HARNESS_IMAGE_TAG}"
+  # the egress scenario also runs the gateway image
+  if [ "${SMOKE_EGRESS:-0}" = "1" ]; then
+    MISSING="$MISSING $REGISTRY:egress-proxy-${HARNESS_IMAGE_TAG}"
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    for img in $MISSING; do
+      if ! docker image inspect "$img" >/dev/null 2>&1; then
+        echo "error: image $img not found locally" >&2
+        echo "  build it first, e.g.:" >&2
+        echo "    make image-${AGENT} image-egress-proxy" >&2
+        echo "  (or tag an existing image: docker tag <existing-ref> $img)" >&2
+        exit 1
+      fi
+    done
+  fi
+fi
+
 # The scenarios assert docker-shaped behavior (entrypoint seeding, published
 # images); on macOS auto-detect would pick apple/container, where the pi
 # entrypoint seed currently fails. Force docker unless the caller overrides.
