@@ -1,7 +1,7 @@
 # Opt-in Egress Allowlisting for Agent Containers
 
 **Date:** 2026-10-08
-**Status:** Proposed
+**Status:** Accepted (Tier 1 implemented; Tier 2 in progress)
 
 ## Goal
 
@@ -366,13 +366,13 @@ Walked one-by-one with the PR; rulings pinned in the table below.
 
 Tier 1:
 
-- [ ] `--network` flag + `HARNESS_NETWORK` env in `MINIMIST_OPTS` and
+- [x] `--network` flag + `HARNESS_NETWORK` env in `MINIMIST_OPTS` and
       consumption; forward in both `runArgs()` implementations
-- [ ] `--network host` warning
-- [ ] USAGE / README / AGENTS.md updates
-- [ ] e2e: flag forwarding both runtimes, host warning, unchanged-default-argv
+- [x] `--network host` warning
+- [x] USAGE / README / AGENTS.md updates
+- [x] e2e: flag forwarding both runtimes, host warning, unchanged-default-argv
       regression
-- [ ] RFC status → Implemented (Tier 1)
+- [x] RFC status → Implemented (Tier 1)
 
 Tier 2:
 

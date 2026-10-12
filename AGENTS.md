@@ -27,7 +27,7 @@ System linters (`shellcheck`, `hadolint`, `actionlint`) must be installed separa
 
 All CLI logic lives in `src/harness.ts` (compiles to `bin/harness.js`). It:
 
-1. Parses CLI args via `minimist`
+1. Parses CLI args via `minimist` (`--network`/`HARNESS_NETWORK` passes an existing container network through to the runtime; `--network host` warns that host networking removes isolation)
 2. Selects an adapter (`PiAdapter`, `OpenCodeAdapter`, or `HermesAdapter`) based on `--agent` flag
 3. Constructs and spawns a `<runtime> run` command (auto-detects Apple's `container` CLI if on PATH on macOS, otherwise uses `docker`; set `HARNESS_CONTAINER_RUNTIME=docker` to force docker) that mounts `$PWD` and passes the prompt via stdin or `-e`
 
@@ -95,6 +95,7 @@ E2E tests in `tests/e2e/*.test.mjs` (with shared helpers in `helpers.mjs`) use a
 - Image tag selection per agent
 - Security flags (`--cap-drop=ALL`, `--security-opt`, etc.)
 - Port publishing (`--port`, docker `-p` spec syntax, forwarded identically under both runtimes)
+- Network passthrough (`--network` / `HARNESS_NETWORK`, forwarded identically under both runtimes; `--network host` warns)
 - Persistence vs ephemeral behavior (TTY detection, `--ephemeral`, `-p`)
 - Volume mount construction (file vs directory, adapter-specific mount points, npm persistence)
 - `--env-file` forwarding across all adapters
