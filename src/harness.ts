@@ -1031,7 +1031,7 @@ function dockerNetworkSubnet(name: string): string {
         "network",
         "inspect",
         "--format",
-        "{{range (index .IPAM.Config 0).Subnet}}{{.}}{{end}}",
+        "{{if .IPAM.Config}}{{(index .IPAM.Config 0).Subnet}}{{end}}",
         name,
       ],
       { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
@@ -1167,25 +1167,56 @@ function dockerSync(
   }
 }
 
-/** Remove harness-egress-* networks left behind by crashed runs. */
+/**
+ * Remove harness-egress-* networks left behind by crashed runs.
+ *
+ * A crashed run (e.g. SIGTERM during the agent run) leaves its detached
+ * gateway container attached, so the network is never empty and the
+ * empty-only check would never reclaim it — while its /29 blocks the pool
+ * ("Pool overlaps") for every later run. Staleness test: a live run's
+ * network holds the gateway PLUS the agent container; a crashed run's holds
+ * only the gateway (the agent ran with --rm). Networks whose only container
+ * is a harness-egress-gw-* are stale: kill the gateway, then the network.
+ * (Best-effort: a concurrent run mid-bring-up — gateway attached, agent not
+ * yet started — is indistinguishable and may be swept; runs are expected to
+ * be sequential, matching the empty-network sweep's existing race.)
+ */
 function sweepStaleEgressNetworks(): void {
   for (const net of dockerNetworks()) {
     if (!net.name.startsWith("harness-egress-")) continue;
     try {
       const out = execFileSync(
         "docker",
-        ["network", "inspect", "--format", "{{len .Containers}}", net.name],
+        [
+          "network",
+          "inspect",
+          "--format",
+          "{{range .Containers}}{{.Name}} {{end}}",
+          net.name,
+        ],
         { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
       )
         .toString()
         .trim();
-      if (out === "0") {
-        execFileSync("docker", ["network", "rm", net.name], {
-          stdio: ["ignore", "pipe", "inherit"],
-          timeout: 5000,
-        });
-        console.error(`harness: swept stale egress network ${net.name}`);
+      const members = out === "" ? [] : out.trim().split(/\s+/);
+      const stale = members.every((m) => m.startsWith("harness-egress-gw-"));
+      if (!stale) continue;
+      for (const gw of members) {
+        try {
+          execFileSync("docker", ["rm", "-f", gw], {
+            stdio: ["ignore", "pipe", "ignore"],
+            timeout: 15000,
+          });
+          console.error(`harness: swept stale egress gateway ${gw}`);
+        } catch {
+          // best-effort; an un-removable gateway just leaves the network
+        }
       }
+      execFileSync("docker", ["network", "rm", net.name], {
+        stdio: ["ignore", "pipe", "inherit"],
+        timeout: 5000,
+      });
+      console.error(`harness: swept stale egress network ${net.name}`);
     } catch {
       // best-effort; a busy/in-use network survives
     }
