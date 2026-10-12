@@ -3,5 +3,6 @@ bin/
 .harness
 coverage/
 tmp/
+integration-output/
 .pi-lens/
 site/
