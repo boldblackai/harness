@@ -23,15 +23,12 @@ TIMEOUT="${TIMEOUT:-120}"
 
 # Per-adapter model selection.
 #
-# OpenRouter model IDs have a provider prefix (openrouter/google/...).
-# Hermes rejects the prefixed form (HTTP 400) — it detects the provider
-# from the prefix but sends the full string to the API. Opencode
-# requires the prefix — the bare form causes "Unexpected server error".
-# Pi accepts both forms.
-case "$AGENT" in
-  hermes) MODEL="${2:-stepfun/step-3.5-flash}" ;;
-  *)      MODEL="${2:-openrouter/stepfun/step-3.5-flash}" ;;
-esac
+# Model: zai/glm-5.3-flash via the Z.AI provider. The provider-qualified
+# form (zai/...) is what harness -m passes through; pi accepts both the
+# qualified and bare forms, hermes and opencode want the qualified one
+# (opencode's enabled-provider resolution and hermes's provider detection
+# both key off the prefix). The env file must carry ZAI_API_KEY.
+MODEL="${2:-zai/glm-5.3-flash}"
 
 NODE_BIN="${NODE_BIN:-node}"
 HARNESS_BIN="$(pwd)/bin/harness.js"
@@ -269,14 +266,14 @@ scenario_multi_file() {
 # Seeds probe.mjs (a Node fetch one-shot; the base image ships Node 24 and
 # harness injects NODE_USE_ENV_PROXY=1 with --egress, so fetch honors the
 # squid gateway) and runs the agent twice under
-# --egress "openrouter.ai,example.com" (openrouter.ai keeps the model API
-# reachable so the agent can process the prompt at all):
+# --egress "api.z.ai,example.com" (api.z.ai keeps the model API reachable
+# so the agent can process the prompt at all):
 #   positive: probe https://example.com  -> "OK 200" (allowlisted, proxied)
 #   negative: probe https://iana.org     -> "ERR ..." (proxy-denied)
 
 scenario_egress() {
   echo "  [egress] allowlisted destination reachable, non-allowlisted denied"
-  local allowlist="openrouter.ai,example.com"
+  local allowlist="api.z.ai,example.com"
 
   # One shared probe script; the target URL is argv[2].
   local probe_ok_ws probe_deny_ws probe_ok_out probe_deny_out ok_result deny_result
