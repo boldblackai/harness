@@ -28,7 +28,7 @@ System linters (`shellcheck`, `hadolint`, `actionlint`) must be installed separa
 
 All CLI logic lives in `src/harness.ts` (compiles to `bin/harness.js`). It:
 
-1. Parses CLI args via `minimist` (`--network`/`HARNESS_NETWORK` passes an existing container network through to the runtime; `--network host` warns that host networking removes isolation)
+1. Parses CLI args via `minimist`
 2. Selects an adapter (`PiAdapter`, `OpenCodeAdapter`, or `HermesAdapter`) based on `--agent` flag
 3. Constructs and spawns a `<runtime> run` command (auto-detects Apple's `container` CLI if on PATH on macOS, otherwise uses `docker`; set `HARNESS_CONTAINER_RUNTIME=docker` to force docker) that mounts `$PWD` and passes the prompt via stdin or `-e`
 
@@ -49,7 +49,7 @@ The image tag is selected at runtime based on `--agent`: pi uses `<version>`, ot
 
 ### Key subsystems
 
-**Egress control (opt-in, two tiers):** `--network <name>` (Tier 1) passes an existing container network through to the runtime verbatim (`HARNESS_NETWORK` env; `--network host` warns). `--egress <allowlist>` (Tier 2, docker-only — the apple runtime fails closed) creates a per-run `--internal` network plus a squid egress gateway container (`egress-proxy-<version>` image) attached to both the internal network (static IP `.2`) and the default bridge. The agent container gets `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` (+`NODE_USE_ENV_PROXY=1`) injected after `--env-file` (last wins), and on Linux `--add-host host.docker.internal:host-gateway`. The fence is the topology (`--internal` = no external route except via the gateway), not the env vars. Allowlist grammar: exact host, `.domain`/`*.domain` suffix, `host.docker.internal[:port]` (direct, never proxied), `@file`, or `none` (airgap: internal network, no gateway). Non-443 ports are rejected in v1 (raw-TCP deferred — see `rfcs/2026-10-08_egress_allowlist.md`). Subnet pool `192.0.2.0/24` in /29s, override with `HARNESS_EGRESS_SUBNET`; stale `harness-egress-*` networks are swept on the next `--egress` run. `--egress` + `--network` is a hard error.
+**Egress control (opt-in, two tiers):** `--network <name>` (Tier 1) passes an existing container network through to the runtime verbatim (`--network host` warns). `--egress <allowlist>` (Tier 2, docker-only — the apple runtime fails closed) creates a per-run `--internal` network plus a squid egress gateway container (`egress-proxy-<version>` image) attached to both the internal network (static IP `.2`) and the default bridge. The agent container gets `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` (+`NODE_USE_ENV_PROXY=1`, a Node ≥24 built-in that makes `fetch`/undici honor the proxy env vars) injected after `--env-file` (last wins), and on Linux `--add-host host.docker.internal:host-gateway`. The fence is the topology (`--internal` = no external route except via the gateway), not the env vars. Allowlist grammar: exact host, `.domain`/`*.domain` suffix, `host.docker.internal[:port]` (direct, never proxied), `@file`, or `none` (airgap: internal network, no gateway). Non-443 ports are rejected in v1 (raw-TCP deferred — see `rfcs/2026-10-08_egress_allowlist.md`). Subnet pool `192.0.2.0/24` in /29s, override with `HARNESS_EGRESS_SUBNET`; stale `harness-egress-*` networks are swept on the next `--egress` run. `--egress` + `--network` is a hard error.
 
 **Cosign image verification (`verifyImage`):** On every run (unless `--no-verify` or `HARNESS_IMAGE_TAG` is set), harness verifies the container image was signed by the official CI workflow and carries a valid SLSA provenance attestation. Verified digests are cached at `~/.cache/harness/cosign-verified.json`. Requires `cosign` installed on the host.
 
@@ -99,7 +99,7 @@ E2E tests in `tests/e2e/*.test.mjs` (with shared helpers in `helpers.mjs`) use a
 - Image tag selection per agent
 - Security flags (`--cap-drop=ALL`, `--security-opt`, etc.)
 - Port publishing (`--port`, docker `-p` spec syntax, forwarded identically under both runtimes)
-- Network passthrough (`--network` / `HARNESS_NETWORK`, forwarded identically under both runtimes; `--network host` warns)
+- Network passthrough (`--network`, forwarded identically under both runtimes; `--network host` warns)
 - Persistence vs ephemeral behavior (TTY detection, `--ephemeral`, `-p`)
 - Volume mount construction (file vs directory, adapter-specific mount points, npm persistence)
 - `--env-file` forwarding across all adapters
