@@ -1,4 +1,4 @@
-// Tier 1 egress-control tests: --network passthrough and HARNESS_NETWORK
+// Tier 1 egress-control tests: --network passthrough
 // (rfcs/2026-10-08_egress_allowlist.md). Tier 2 (--egress) has its own file.
 //
 // Also locks the RFC's hard compatibility requirement: with no egress flags,
@@ -68,36 +68,6 @@ test("--network forwards verbatim under the apple runtime", () => {
   assert.notEqual(idx, -1, `expected --network: ${a.join(" ")}`);
   assert.equal(a[idx + 1], "corp-proxy-net");
 });
-
-test("HARNESS_NETWORK supplies the default when --network is absent", () => {
-  const r = runCli(["-p", "noop"], {
-    extraEnv: { HARNESS_NETWORK: "from-env" },
-  });
-  assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
-  assert.ok(a, "expected DOCKER_INVOKED line");
-  const idx = a.indexOf("--network");
-  assert.notEqual(idx, -1);
-  assert.equal(a[idx + 1], "from-env");
-});
-
-test("CLI --network wins over HARNESS_NETWORK", () => {
-  const r = runCli(["-p", "noop", "--network", "from-flag"], {
-    extraEnv: { HARNESS_NETWORK: "from-env" },
-  });
-  assert.equal(r.status, 0, r.stderr);
-  const a = dockerArgs(r.stdout);
-  const idx = a.indexOf("--network");
-  assert.equal(a[idx + 1], "from-flag");
-  // exactly one --network token
-  assert.equal(
-    a.filter((t) => t === "--network").length,
-    1,
-    `expected exactly one --network: ${a.join(" ")}`,
-  );
-});
-
-// ---- validation / warnings --------------------------------------------------
 
 test("--network host warns on stderr but proceeds", () => {
   const r = runCli(["-p", "noop", "--network", "host"]);

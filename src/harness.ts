@@ -618,7 +618,6 @@ Environment variables:
   HARNESS_IMAGE_TAG           Override the Docker image tag (defaults to package version)
   HARNESS_REGISTRY            Override the container registry (defaults to ghcr.io/boldblackai/harness)
   HARNESS_CONTAINER_RUNTIME   Container runtime: auto (default; prefers Apple container on macOS), docker, apple (deprecated)
-  HARNESS_NETWORK             Default for --network (CLI flag wins)
   HARNESS_EGRESS_SUBNET       Override the egress network subnet pool (IPv4 CIDR, default 192.0.2.0/24 split into /29s)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
@@ -840,11 +839,9 @@ for (const spec of portArgList) {
 // ---------------------------------------------------------------------------
 
 const networkArg: string | null = (() => {
-  const flag = argv.network ?? process.env.HARNESS_NETWORK ?? null;
+  const flag = argv.network ?? null;
   if (flag !== null && flag.trim() === "") {
-    console.error(
-      "harness: --network requires a non-empty network name (or unset HARNESS_NETWORK)",
-    );
+    console.error("harness: --network requires a non-empty network name");
     process.exit(1);
   }
   return flag;
