@@ -221,6 +221,35 @@ One-shot runs (`-p` or piped stdin) are implicitly ephemeral — no persistence 
 
 If an old `.harness/` directory exists in your working directory, harness will emit a deprecation warning with migration instructions.
 
+## Egress control
+
+By default the agent container runs on the default bridge with unrestricted outbound access. `--network` lets you attach it to an existing network instead — for example a network wired to an existing corporate proxy — bringing your own egress topology.
+
+```bash
+harness --network corp-proxy-net
+```
+
+The value is forwarded verbatim to the container runtime (`docker run --network <name>` / `container run --network <name>`); no harness-side validation beyond non-empty. `--network host` proceeds with a warning that host networking removes network isolation.
+
+**Tier 2 — `--egress <allowlist>` managed enforcement** (per [RFC: opt-in egress allowlisting](https://github.com/boldblackai/harness/blob/main/rfcs/2026-10-08_egress_allowlist.md)). Harness creates a per-run `--internal` network (no external route) plus an egress gateway container (squid, CONNECT-only) that is the only container with a route off-host. The agent container reaches the internet **only** through the gateway, and the gateway forwards only allowlisted destination hostnames. Allowlist syntax:
+
+```text
+--egress "api.anthropic.com,api.openai.com,openrouter.ai,.amazonaws.com"
+--egress @/etc/harness/egress-allowlist.txt   # one entry per line, # comments
+--egress none                                  # airgap: no gateway at all
+```
+
+| Entry | Meaning |
+|-------|---------|
+| `host` | exact hostname, HTTPS (443) via CONNECT |
+| `.domain` or `*.domain` | any host under `domain` (e.g. `.amazonaws.com` covers regional endpoints) |
+| `host.docker.internal[:port]` | host-local destination: direct connection, never proxied (port advisory in v1) |
+| `host:port` | rejected in v1 — the raw-TCP extension is deferred (see the RFC) |
+
+`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` (and `NODE_USE_ENV_PROXY=1` — a Node ≥24 built-in that makes `fetch`/undici honor the proxy env vars) are injected after `--env-file`, so they take precedence over same-key values in a user env file. **The boundary is the network topology, not the env vars** — an agent that ignores the proxy env vars can still only reach the gateway. On Linux, `--add-host host.docker.internal:host-gateway` keeps the host reachable from the internal network (Docker Desktop provides this natively). The egress subnet pool defaults to `192.0.2.0/24` split into /29s; override with `HARNESS_EGRESS_SUBNET=<cidr>` when it collides with your networks. `--egress` is docker-only in v1 (the apple/container runtime fails closed with an error) and mutually exclusive with `--network`.
+
+Airgap mode pairs naturally with local mode: `harness --local --egress none` runs the agent against `host.docker.internal:1234` (LM Studio) with no route anywhere else — unlike `docker run --network none`, which would break local-LLM usage too.
+
 ## Reference
 
 ### CLI flags
@@ -240,6 +269,8 @@ If an old `.harness/` directory exists in your working directory, harness will e
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
 | `--mount-entire-home` | | Allow running from your home directory (mounts all of `$HOME` as the workspace) |
+| `--network`    |       | Attach the container to an existing network (e.g. one wired to a corp proxy); see [Egress control](#egress-control) |
+| `--egress`     |       | Restrict outbound traffic to an allowlist (hosts, `.suffix` domains, `@file`, or `none` for airgap); see [Egress control](#egress-control) |
 | `--help`      | `-h`  | Show help |
 
 ### Environment variables
@@ -248,6 +279,7 @@ If an old `.harness/` directory exists in your working directory, harness will e
 |-----------------------------|-------------|
 | `HARNESS_IMAGE_TAG`         | Override the Docker image tag (defaults to the package version). Setting this implies `--no-verify`. |
 | `HARNESS_CONTAINER_RUNTIME` | Container runtime: `auto` (default — on macOS, prefers Apple's `container` CLI if on PATH; docker everywhere else), `docker` (force docker), or `apple` (deprecated explicit alias; warns). |
+| `HARNESS_EGRESS_SUBNET`     | Override the egress network subnet (IPv4 CIDR; default pool `192.0.2.0/24` split into /29s). |
 | `XDG_DATA_HOME`             | Override the base directory for persistence data (defaults to `~/.local/share`). |
 | `XDG_CACHE_HOME`            | Override the base directory for the cosign cache (defaults to `~/.cache`). |
 

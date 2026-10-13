@@ -27,6 +27,12 @@ else
 	elif [ -n "$ZAI_API_KEY" ]; then
 		export OPENCODE_CONFIG=/etc/opencode/zai.json
 		export OPENCODE_MODEL="${OPENCODE_MODEL:-zai/glm-5.1}"
+		# opencode's zai provider (models.dev catalog) authenticates with
+		# ZHIPU_API_KEY; pi/hermes accept ZAI_API_KEY. Alias it so one
+		# single-provider env file works across all adapters.
+		if [ -z "${ZHIPU_API_KEY:-}" ]; then
+			export ZHIPU_API_KEY="$ZAI_API_KEY"
+		fi
 	elif [ -n "$OPENROUTER_API_KEY" ]; then
 		export OPENCODE_CONFIG=/etc/opencode/openrouter.json
 		export OPENCODE_MODEL="${OPENCODE_MODEL:-openrouter/auto}"

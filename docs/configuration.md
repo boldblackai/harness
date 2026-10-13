@@ -19,6 +19,8 @@ icon: lucide/settings
 | `--no-skills` |       | Disable mounting user skills directories |
 | `--ephemeral` |       | Disable session persistence (implied by `-p` and piped stdin) |
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
+| `--network`   |       | Attach the container to an existing network (e.g. one wired to a corp proxy) |
+| `--egress`    |       | Restrict outbound traffic to an allowlist (hosts, `.suffix` domains, `@file`, or `none` for airgap); docker-only, mutually exclusive with `--network` |
 | `--help`      | `-h`  | Show help |
 
 ## Environment variables
@@ -26,6 +28,7 @@ icon: lucide/settings
 | Variable             | Description |
 |----------------------|-------------|
 | `HARNESS_IMAGE_TAG`  | Override the Docker image tag (defaults to the package version). Setting this implies `--no-verify`. |
+| `HARNESS_EGRESS_SUBNET` | Override the egress network subnet pool (IPv4 CIDR; default `192.0.2.0/24` split into /29s). |
 | `XDG_DATA_HOME`      | Override the base directory for persistence data (defaults to `~/.local/share`). |
 | `XDG_CACHE_HOME`     | Override the base directory for cosign cache (defaults to `~/.cache`). |
 

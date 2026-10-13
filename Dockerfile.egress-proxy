@@ -1,0 +1,26 @@
+# Egress gateway for harness --egress (rfcs/2026-10-08_egress_allowlist.md).
+# Squid forwarding proxy whose squid.conf is generated per run by the harness
+# CLI and mounted in read-only at /etc/squid/squid.conf — nothing about the
+# allowlist is baked into the image. The deferred raw-TCP extension would add
+# dnsmasq + socat here.
+FROM debian:stable-slim@sha256:5bc3287b25407c965a30f38e32603dc253a3869e1b12a21ac09bfc27fd8b13ce
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Squid pinned to the current stable (repo rule: all deps pinned). The
+# hadolint ignore this file previously carried (DL3008) existed only because
+# the package was unpinned.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends squid=6.13-2+deb13u3 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /var/spool/squid /var/log/squid && \
+    chown -R proxy:proxy /var/spool/squid /var/log/squid
+
+# Fail fast if the mounted config is missing/invalid at runtime; the harness
+# CLI's waitForGateway() also probes `squid -k check`.
+USER proxy
+EXPOSE 3128
+
+# -N: foreground, -d 1: stderr logging. Config comes from the mount.
+CMD ["squid", "-N", "-d", "1", "-f", "/etc/squid/squid.conf"]

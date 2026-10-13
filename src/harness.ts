@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile, execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -34,6 +35,8 @@ interface Args extends ParsedArgs {
   a?: string;
   volumes?: string[];
   port?: string[];
+  network?: string;
+  egress?: string;
 }
 
 interface AgentOptions {
@@ -60,6 +63,8 @@ interface RunInput {
   volumeArgs: string[];
   userVolumeArgs: string[];
   portArgs: string[]; // --port publish flags (-p <spec>), runtime-agnostic
+  network: string | null; // --network passthrough (egress RFC Tier 1)
+  addHostArgs: string[]; // --add-host tokens (egress host-local reachability)
   workdir: string;
   image: string;
   containerCmd: string[];
@@ -134,6 +139,8 @@ class DockerRuntime implements ContainerRuntime {
       "no-new-privileges:true",
       "--security-opt",
       `seccomp=${SECCOMP_PROFILE}`,
+      ...(input.network ? ["--network", input.network] : []),
+      ...input.addHostArgs,
       ...input.envFileArgs,
       ...input.envArgs,
       ...input.volumeArgs,
@@ -226,6 +233,8 @@ class AppleContainerRuntime implements ContainerRuntime {
     // is only a minor in-guest defense-in-depth loss. Capability
     // restrictions ARE supported, so --cap-drop=ALL --cap-add=NET_RAW stays.
     const ttyFlags = input.interactive ? ["-i", "-t"] : ["-i"];
+    // --network is forwarded identically under both runtimes (Tier 1
+    // passthrough; apple/container accepts --network natively).
     return [
       "run",
       "--rm",
@@ -234,6 +243,8 @@ class AppleContainerRuntime implements ContainerRuntime {
       "ALL",
       "--cap-add",
       "NET_RAW",
+      ...(input.network ? ["--network", input.network] : []),
+      ...input.addHostArgs,
       ...input.envFileArgs,
       ...input.envArgs,
       ...input.volumeArgs,
@@ -598,12 +609,16 @@ Options:
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
   --local                Force local mode even with -e (use LM Studio / local defaults)
   --mount-entire-home    Allow running from your home directory (mounts all of $HOME as the workspace)
+  --network <name>       Attach the container to an existing network (e.g. one wired to a corp proxy)
+  --egress <list>        Restrict outbound traffic to an allowlist (comma-separated hosts, .suffix domains,
+                         host.docker.internal, @file, or "none" for airgap); managed proxy network
   -h, --help             Show this help message
 
 Environment variables:
   HARNESS_IMAGE_TAG           Override the Docker image tag (defaults to package version)
   HARNESS_REGISTRY            Override the container registry (defaults to ghcr.io/boldblackai/harness)
   HARNESS_CONTAINER_RUNTIME   Container runtime: auto (default; prefers Apple container on macOS), docker, apple (deprecated)
+  HARNESS_EGRESS_SUBNET       Override the egress network subnet pool (IPv4 CIDR, default 192.0.2.0/24 split into /29s)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
 
@@ -657,6 +672,8 @@ const MINIMIST_OPTS = {
     "a",
     "volumes",
     "port",
+    "network",
+    "egress",
   ],
   alias: {
     e: "env-file",
@@ -814,10 +831,638 @@ for (const spec of portArgList) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Egress control (rfcs/2026-10-08_egress_allowlist.md), Tier 1: pass an
+// existing container network through to the runtime. Brings your own
+// topology (e.g. a network wired to an existing corp proxy). Strictly
+// opt-in; without the flag the argv is unchanged.
+// ---------------------------------------------------------------------------
+
+const networkArg: string | null = (() => {
+  const flag = argv.network ?? null;
+  if (flag !== null && flag.trim() === "") {
+    console.error("harness: --network requires a non-empty network name");
+    process.exit(1);
+  }
+  return flag;
+})();
+
+if (networkArg === "host") {
+  console.error(
+    "harness: WARNING: --network host removes network isolation between the container and the host.",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Egress control Tier 2: harness-managed allowlisting (per-run --internal
+// network + squid egress gateway). All helpers are pure/testable; lifecycle
+// side effects happen in run() below. Without --egress nothing here runs.
+// ---------------------------------------------------------------------------
+
+/** One parsed --egress allowlist entry. */
+interface EgressEntry {
+  /** Exact hostname, suffix domain (leading dot/star stripped), or IP literal. */
+  host: string;
+  /** True for `.domain` / `*.domain` suffix entries. */
+  suffix: boolean;
+  /** host.docker.internal[:port] — direct connection, never proxied. */
+  hostLocal: boolean;
+  /** Advisory in v1 (only meaningful for host-local entries). */
+  port: number | null;
+}
+
+/** Parsed representation of the whole --egress value. */
+interface EgressAllowlist {
+  entries: EgressEntry[];
+  /** Hostnames/suffixes that must be reachable through the gateway. */
+  proxied: EgressEntry[];
+  /** Directly reachable host destinations (subset of entries). */
+  hostLocal: EgressEntry[];
+  /** True when no proxied entries remain (airgap mode: no gateway). */
+  airgap: boolean;
+}
+
+const HOST_LOCAL_NAME = "host.docker.internal";
+
+function fail(message: string): never {
+  console.error(`harness: ${message}`);
+  process.exit(1);
+}
+
+/**
+ * Like fail(), but for errors raised inside egress bring-up after the
+ * managed network exists: the network must be removed before exiting, or
+ * it is orphaned until the next --egress run's stale sweep.
+ */
+function failWithNetworkCleanup(message: string, network: string): never {
+  console.error(`harness: ${message}`);
+  try {
+    execFileSync("docker", ["network", "rm", network], {
+      stdio: "ignore",
+      timeout: 10000,
+    });
+  } catch {
+    // best-effort; the stale sweep catches survivors
+  }
+  process.exit(1);
+}
+
+/**
+ * Parse a raw --egress entry into its typed form, or fail with RFC-cited
+ * error copy. Grammar: `host`, `.domain`/`*.domain` (suffix),
+ * `host.docker.internal[:port]` (host-local, advisory port), `host:port`
+ * (rejected in v1, deferred raw-TCP extension).
+ */
+function parseEgressEntry(raw: string): EgressEntry {
+  const entry = raw.trim();
+  if (entry === "") {
+    fail("--egress entry is empty.");
+  }
+  const portMatch = entry.match(/^(.*):(\d+)$/);
+  const hasPort = portMatch !== null;
+  const body = hasPort ? portMatch[1] : entry;
+  const port = hasPort ? Number.parseInt(portMatch[2], 10) : null;
+  if (hasPort && (port === null || port < 1 || port > 65535)) {
+    fail(`--egress entry "${entry}" has an invalid port.`);
+  }
+  const hostLocal = body === HOST_LOCAL_NAME;
+  if (hasPort && !hostLocal) {
+    fail(
+      `--egress entry "${entry}": non-443 ports are not supported in v1 (HTTPS CONNECT proxying only). Host and suffix entries default to port 443; the raw-TCP extension is deferred (see rfcs/2026-10-08_egress_allowlist.md).`,
+    );
+  }
+  let host = body;
+  let suffix = false;
+  if (host.startsWith("*.") && host.length > 2) {
+    suffix = true;
+    host = host.slice(2);
+  } else if (host.startsWith(".") && host.length > 1) {
+    suffix = true;
+    host = host.slice(1);
+  }
+  if (host === "" || host === "." || host.includes("/") || host.includes(" ")) {
+    fail(`--egress entry "${entry}" is not a valid hostname.`);
+  }
+  return { host, suffix, hostLocal, port };
+}
+
+/**
+ * Parse the full --egress value: comma-separated entries, `@file` form, or
+ * the literal `none` (airgap). Empty/whitespace items between commas are
+ * tolerated; a file whose entries are all comments selects airgap.
+ */
+function parseEgressValue(value: string): EgressAllowlist {
+  let rawEntries: string[];
+  const v = value.trim();
+  if (v === "") {
+    return fail(
+      '--egress requires a value: a comma-separated list, "@file", or "none" (airgap).',
+    );
+  }
+  if (v === "none") {
+    rawEntries = [];
+  } else if (v.startsWith("@")) {
+    const file = v.slice(1);
+    let content: string;
+    try {
+      content = fs.readFileSync(file, "utf8");
+    } catch {
+      return fail(`--egress: cannot read allowlist file ${file}`);
+    }
+    rawEntries = content
+      .split("\n")
+      .map((l) => l.replace(/#.*$/, "").trim())
+      .filter((l) => l !== "");
+  } else {
+    rawEntries = v.split(",").map((e) => e.trim());
+  }
+  const seen = new Set<string>();
+  const entries: EgressEntry[] = [];
+  for (const raw of rawEntries) {
+    if (raw === "") continue;
+    const parsed = parseEgressEntry(raw);
+    const key = `${parsed.suffix ? "." : ""}${parsed.host}${
+      parsed.port !== null ? `:${parsed.port}` : ""
+    }`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push(parsed);
+  }
+  const hostLocal = entries.filter((e) => e.hostLocal);
+  const proxied = entries.filter((e) => !e.hostLocal);
+  return { entries, proxied, hostLocal, airgap: proxied.length === 0 };
+}
+
+// Subnet allocation from the documentation pool 192.0.2.0/24 broken into
+// /29s (32 subnets, gateway .1, egress gateway static .2). Overridable via
+// HARNESS_EGRESS_SUBNET=<cidr>. Collisions with live docker networks are
+// detected before create; a fully exhausted pool is a hard error.
+const EGRESS_SUBNET_POOL = "192.0.2.0/24";
+const EGRESS_SUBNET_SIZE = 29; // 6 usable hosts each, plenty for one run
+
+/** List docker networks as [{name, subnet}] (best-effort; [] on failure). */
+function dockerNetworks(): { name: string; subnet: string }[] {
+  try {
+    const out = execFileSync(
+      "docker",
+      ["network", "ls", "--format", "{{.Name}}"],
+      { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
+    )
+      .toString()
+      .trim();
+    if (out === "") return [];
+    return out
+      .split("\n")
+      .map((name) => ({ name, subnet: dockerNetworkSubnet(name) }));
+  } catch {
+    return [];
+  }
+}
+
+/** Inspect one network's IPv4 subnet (empty string on failure). */
+function dockerNetworkSubnet(name: string): string {
+  try {
+    const out = execFileSync(
+      "docker",
+      [
+        "network",
+        "inspect",
+        "--format",
+        "{{if .IPAM.Config}}{{(index .IPAM.Config 0).Subnet}}{{end}}",
+        name,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
+    )
+      .toString()
+      .trim();
+    return out;
+  } catch {
+    return "";
+  }
+}
+
+function cidrToIpInt(cidr: string): number | null {
+  const m = cidr.match(
+    /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/,
+  );
+  if (!m) return null;
+  const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  if (octets.some((o) => o > 255)) return null;
+  return (
+    (((octets[0] << 24) >>> 0) +
+      (octets[1] << 16) +
+      (octets[2] << 8) +
+      octets[3]) >>>
+    0
+  );
+}
+
+function ipIntToString(int: number): string {
+  return [
+    (int >>> 24) & 0xff,
+    (int >>> 16) & 0xff,
+    (int >>> 8) & 0xff,
+    int & 0xff,
+  ].join(".");
+}
+
+/**
+ * Pick a free /29 from the pool, skipping subnets already in use by any
+ * docker network. Returns e.g. "192.0.2.8/29" or exits with an error.
+ */
+function allocateEgressSubnet(): string {
+  const custom = process.env.HARNESS_EGRESS_SUBNET;
+  if (custom) {
+    if (cidrToIpInt(custom) === null || !custom.includes("/")) {
+      fail(`HARNESS_EGRESS_SUBNET must be an IPv4 CIDR (got "${custom}").`);
+    }
+    return custom;
+  }
+  const poolBase = cidrToIpInt(EGRESS_SUBNET_POOL);
+  if (poolBase === null) return fail("internal: bad egress subnet pool");
+  const used = new Set(
+    dockerNetworks()
+      .map((n) => n.subnet)
+      .filter(Boolean),
+  );
+  // 32 /29s in a /24
+  for (let i = 0; i < 32; i++) {
+    const candidate = (poolBase + i * 8) >>> 0;
+    const cidr = `${ipIntToString(candidate)}/${EGRESS_SUBNET_SIZE}`;
+    if (!used.has(cidr)) return cidr;
+  }
+  return fail(
+    `--egress: no free subnet in the ${EGRESS_SUBNET_POOL} pool; set HARNESS_EGRESS_SUBNET to a free private /29.`,
+  );
+}
+
+/**
+ * Generate squid.conf from the allowlist: one dstdomain ACL (suffix entries
+ * as `.domain`, exact entries bare), deny-by-default. Only called when
+ * proxied entries exist (airgap mode starts no gateway). ACL must precede
+ * the http_access lines that reference it (squid parses sequentially).
+ * All writable paths point at /tmp: the gateway runs as the unprivileged
+ * `proxy` user, and Debian squid's defaults (/run/squid.pid, /var/log/squid)
+ * are root-owned — a fatal startup error without this.
+ */
+function generateSquidConfig(allowlist: EgressAllowlist): string {
+  const domains = allowlist.proxied.map((e) =>
+    e.suffix ? `.${e.host}` : e.host,
+  );
+  return [
+    "# generated by harness --egress; do not edit",
+    "http_port 3128",
+    "pid_filename /tmp/squid.pid",
+    "cache deny all",
+    "coredump_dir /tmp",
+    `acl proxied-domains dstdomain ${domains.join(" ")}`,
+    "http_access allow proxied-domains",
+    "http_access deny all",
+    "access_log stdio:stderr",
+    "cache_log stdio:stderr",
+    "",
+  ].join("\n");
+}
+
+/** Parse `--egress` CLI value; null when the flag is absent. */
+const egressArg: string | null = argv.egress ?? null;
+
+let egressAllowlist: EgressAllowlist | null = null;
+if (egressArg !== null) {
+  if (networkArg !== null) {
+    fail(
+      "--egress and --network are mutually exclusive (the managed network is the point).",
+    );
+  }
+  egressAllowlist = parseEgressValue(egressArg);
+}
+
+// ---------------------------------------------------------------------------
+// Egress lifecycle helpers (docker-only; the apple runtime fails closed).
+// All output is captured/discarded on stdout so e2e shim assertions on the
+// final `run` argv stay clean; runtime errors surface on stderr.
+// ---------------------------------------------------------------------------
+
+function dockerSync(
+  args: string[],
+  what: string,
+  timeoutMs = 30000,
+  cleanupNetwork?: string,
+): string {
+  try {
+    return execFileSync("docker", args, {
+      stdio: ["ignore", "pipe", "inherit"],
+      timeout: timeoutMs,
+    }).toString();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const message = `--egress: ${what} failed: ${msg}`;
+    if (cleanupNetwork) {
+      failWithNetworkCleanup(message, cleanupNetwork);
+    }
+    fail(message);
+  }
+}
+
+/**
+ * Remove harness-egress-* networks left behind by crashed runs.
+ *
+ * A crashed run (e.g. SIGTERM during the agent run) leaves its detached
+ * gateway container attached, so the network is never empty and the
+ * empty-only check would never reclaim it — while its /29 blocks the pool
+ * ("Pool overlaps") for every later run. Staleness test: a live run's
+ * network holds the gateway PLUS the agent container; a crashed run's holds
+ * only the gateway (the agent ran with --rm). Networks whose only container
+ * is a harness-egress-gw-* are stale: kill the gateway, then the network.
+ * (Best-effort: a concurrent run mid-bring-up — gateway attached, agent not
+ * yet started — is indistinguishable and may be swept; runs are expected to
+ * be sequential, matching the empty-network sweep's existing race.)
+ */
+function sweepStaleEgressNetworks(): void {
+  for (const net of dockerNetworks()) {
+    if (!net.name.startsWith("harness-egress-")) continue;
+    try {
+      const out = execFileSync(
+        "docker",
+        [
+          "network",
+          "inspect",
+          "--format",
+          "{{range .Containers}}{{.Name}} {{end}}",
+          net.name,
+        ],
+        { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
+      )
+        .toString()
+        .trim();
+      const members = out === "" ? [] : out.trim().split(/\s+/);
+      const stale = members.every((m) => m.startsWith("harness-egress-gw-"));
+      if (!stale) continue;
+      for (const gw of members) {
+        try {
+          execFileSync("docker", ["rm", "-f", gw], {
+            stdio: ["ignore", "pipe", "ignore"],
+            timeout: 15000,
+          });
+          console.error(`harness: swept stale egress gateway ${gw}`);
+        } catch {
+          // best-effort; an un-removable gateway just leaves the network
+        }
+      }
+      execFileSync("docker", ["network", "rm", net.name], {
+        stdio: ["ignore", "pipe", "inherit"],
+        timeout: 5000,
+      });
+      console.error(`harness: swept stale egress network ${net.name}`);
+    } catch {
+      // best-effort; a busy/in-use network survives
+    }
+  }
+}
+
+/**
+ * Wait until the gateway's squid is up (pid file exists and responds to
+ * `squid -k check`). If the container exits first, dump its logs and fail —
+ * a dead gateway must never be treated as "slow to start".
+ */
+function waitForGateway(container: string): void {
+  for (let i = 0; i < 20; i++) {
+    let running = "true";
+    try {
+      running = execFileSync(
+        "docker",
+        ["inspect", "--format", "{{.State.Running}}", container],
+        { stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
+      )
+        .toString()
+        .trim();
+    } catch {
+      // inspect races with --rm removal; treat as not-yet-running
+    }
+    if (running === "false") {
+      let logs = "";
+      try {
+        logs = execFileSync("docker", ["logs", "--tail", "40", container], {
+          stdio: ["ignore", "pipe", "ignore"],
+          timeout: 5000,
+        }).toString();
+      } catch {
+        // container already reaped by --rm
+      }
+      fail(`--egress: egress gateway exited during startup.\n${logs.trim()}`);
+    }
+    try {
+      execFileSync("docker", ["exec", container, "squid", "-k", "check"], {
+        stdio: "ignore",
+        timeout: 5000,
+      });
+      return;
+    } catch {
+      syncSleep(250);
+    }
+  }
+  console.error(
+    "harness: WARNING: egress gateway did not confirm readiness in 5s; continuing.",
+  );
+}
+
+/** Synchronous sleep (Atomics.wait on a shared buffer). */
+function syncSleep(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+interface EgressRuntimeState {
+  network: string;
+  gatewayContainer: string | null;
+  gatewayIp: string | null;
+  envArgs: string[];
+  addHostArgs: string[];
+  cleanup: () => void;
+}
+
+/**
+ * Bring up the managed egress topology: --internal network, gateway (unless
+ * airgap), proxy env. Returns state the run() flow merges into RunInput and
+ * a cleanup closure to invoke after the agent container exits.
+ */
+async function startEgress(
+  runtime: ContainerRuntime,
+  allowlist: EgressAllowlist,
+  noVerifyFlag: boolean,
+): Promise<EgressRuntimeState> {
+  const runId = randomUUID().slice(0, 8);
+  const network = `harness-egress-${runId}`;
+  const subnet = allocateEgressSubnet();
+  const subnetBase = cidrToIpInt(subnet);
+  if (subnetBase === null) fail(`--egress: bad subnet "${subnet}".`);
+  const gatewayIp = ipIntToString((subnetBase + 2) >>> 0);
+
+  sweepStaleEgressNetworks();
+  dockerSync(
+    ["network", "create", "--internal", "--subnet", subnet, network],
+    `creating egress network (${subnet})`,
+  );
+
+  return bringUpEgress(
+    network,
+    runId,
+    subnetBase,
+    allowlist,
+    noVerifyFlag,
+    runtime,
+  );
+}
+
+async function bringUpEgress(
+  network: string,
+  runId: string,
+  subnetBase: number,
+  allowlist: EgressAllowlist,
+  noVerifyFlag: boolean,
+  runtime: ContainerRuntime,
+): Promise<EgressRuntimeState> {
+  // All failure paths below must go through failWithNetworkCleanup so the
+  // network created by startEgress is not orphaned.
+  const gatewayIp = ipIntToString((subnetBase + 2) >>> 0);
+  const envArgs: string[] = [];
+  let gatewayContainer: string | null = null;
+
+  if (!allowlist.airgap) {
+    const gatewayImage = `${REGISTRY}:egress-proxy-${IMAGE_TAG}`;
+    if (!noVerifyFlag && !process.env.HARNESS_IMAGE_TAG) {
+      try {
+        await verifyImage(runtime, gatewayImage);
+      } catch {
+        failWithNetworkCleanup(
+          `--egress: gateway image verification failed for ${gatewayImage} (pass --no-verify or build the image locally)`,
+          network,
+        );
+      }
+    }
+    gatewayContainer = `harness-egress-gw-${runId}`;
+    const confFile = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "harness-egress-")),
+      "squid.conf",
+    );
+    fs.writeFileSync(confFile, generateSquidConfig(allowlist), {
+      mode: 0o644,
+    });
+    dockerSync(
+      [
+        "run",
+        "--rm",
+        "-d",
+        "--name",
+        gatewayContainer,
+        "--cap-drop=ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--security-opt",
+        `seccomp=${SECCOMP_PROFILE}`,
+        "--network",
+        network,
+        "--ip",
+        gatewayIp,
+        "-v",
+        `${confFile}:/etc/squid/squid.conf:ro`,
+        gatewayImage,
+      ],
+      "starting egress gateway",
+      120000,
+      network,
+    );
+    // External leg: the gateway is the only container with a route off-host.
+    dockerSync(
+      ["network", "connect", "bridge", gatewayContainer],
+      "attaching gateway to the default bridge",
+      30000,
+      network,
+    );
+    waitForGateway(gatewayContainer);
+
+    const proxyUrl = `http://${gatewayIp}:3128`;
+    envArgs.push(
+      "-e",
+      `HTTPS_PROXY=${proxyUrl}`,
+      "-e",
+      `HTTP_PROXY=${proxyUrl}`,
+      "-e",
+      `NO_PROXY=localhost,127.0.0.1,${HOST_LOCAL_NAME}`,
+      // Node's fetch/http ignore proxy env vars without this (Node 24+);
+      // inert for non-Node agents.
+      "-e",
+      "NODE_USE_ENV_PROXY=1",
+    );
+    console.error(
+      `harness: egress allowlist active — ${allowlist.proxied.length} destination(s) via gateway ${gatewayIp}`,
+    );
+  } else {
+    envArgs.push("-e", `NO_PROXY=localhost,127.0.0.1,${HOST_LOCAL_NAME}`);
+    console.error(
+      "harness: egress airgap mode — no gateway, no external route",
+    );
+  }
+
+  // Host reachability from an --internal network. Docker Desktop provides
+  // host.docker.internal natively; on Linux engines the host-gateway route
+  // must be added explicitly (docker 20.10+).
+  const addHostArgs: string[] =
+    process.platform === "linux"
+      ? ["--add-host", `${HOST_LOCAL_NAME}:host-gateway`]
+      : [];
+
+  const gw = gatewayContainer;
+  const cleanup = () => {
+    if (gw !== null) {
+      try {
+        execFileSync("docker", ["rm", "-f", gw], {
+          stdio: ["ignore", "pipe", "inherit"],
+          timeout: 15000,
+        });
+      } catch {
+        // best-effort; --rm cleans up on stop, and the stale sweep catches it
+      }
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        execFileSync("docker", ["network", "rm", network], {
+          stdio: ["ignore", "pipe", "inherit"],
+          timeout: 10000,
+        });
+        return;
+      } catch {
+        syncSleep(500); // gateway may still be detaching
+      }
+    }
+  };
+
+  return {
+    network,
+    gatewayContainer,
+    gatewayIp,
+    envArgs,
+    addHostArgs,
+    cleanup,
+  };
+}
+
 async function run(prompt: string | null): Promise<void> {
   const runtime = selectRuntime();
   runtime.ensureReady();
   const image = getImage(agentName);
+
+  // --egress is docker-only in v1: whether apple/container supports --internal
+  // networks and multi-network attach is unverified; fail closed (RFC D5).
+  let egress: EgressRuntimeState | null = null;
+  if (egressAllowlist !== null) {
+    if (!(runtime instanceof DockerRuntime)) {
+      fail(
+        "--egress is not yet supported under the apple/container runtime " +
+          "(--internal networks / multi-network attach unverified); use HARNESS_CONTAINER_RUNTIME=docker.",
+      );
+    }
+    egress = await startEgress(runtime, egressAllowlist, noVerify);
+  }
 
   if (!noVerify) {
     if (process.env.HARNESS_IMAGE_TAG) {
@@ -953,17 +1598,26 @@ async function run(prompt: string | null): Promise<void> {
   const args = runtime.runArgs({
     interactive,
     envFileArgs,
-    envArgs: [...cloudModeEnv, ...adapterDockerArgs],
+    envArgs: [
+      ...cloudModeEnv,
+      ...adapterDockerArgs,
+      ...(egress?.envArgs ?? []),
+    ],
     volumeArgs,
     userVolumeArgs,
     portArgs,
+    network: egress ? egress.network : networkArg,
+    addHostArgs: egress?.addHostArgs ?? [],
     workdir: "/workspace",
     image,
     containerCmd,
   });
 
   const child = spawn(runtime.binary(), args, { stdio: "inherit" });
-  child.on("exit", (code) => process.exit(code ?? 1));
+  child.on("exit", (code) => {
+    egress?.cleanup();
+    process.exit(code ?? 1);
+  });
 }
 
 if (!process.stdin.isTTY && promptArg === null) {

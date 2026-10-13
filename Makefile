@@ -13,6 +13,9 @@ image-opencode:
 image-hermes:
 	docker build --build-arg BASE_IMAGE=$(REGISTRY):latest --build-arg TARGETARCH=$(ARCH) -t $(REGISTRY):hermes-latest -f Dockerfile.hermes .
 
-image: image-base image-opencode image-hermes
+image-egress-proxy:
+	docker build --build-arg TARGETARCH=$(ARCH) -t $(REGISTRY):egress-proxy-latest -f Dockerfile.egress-proxy .
 
-.PHONY: build image image-base image-opencode image-hermes
+image: image-base image-opencode image-hermes image-egress-proxy
+
+.PHONY: build image image-base image-opencode image-hermes image-egress-proxy

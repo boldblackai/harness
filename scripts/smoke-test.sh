@@ -23,18 +23,57 @@ TIMEOUT="${TIMEOUT:-120}"
 
 # Per-adapter model selection.
 #
-# OpenRouter model IDs have a provider prefix (openrouter/google/...).
-# Hermes rejects the prefixed form (HTTP 400) — it detects the provider
-# from the prefix but sends the full string to the API. Opencode
-# requires the prefix — the bare form causes "Unexpected server error".
-# Pi accepts both forms.
-case "$AGENT" in
-  hermes) MODEL="${2:-stepfun/step-3.5-flash}" ;;
-  *)      MODEL="${2:-openrouter/stepfun/step-3.5-flash}" ;;
-esac
+# Model: zai/glm-5.3-flash via the Z.AI provider. The provider-qualified
+# form (zai/...) is what harness -m passes through; pi accepts both the
+# qualified and bare forms, hermes and opencode want the qualified one
+# (opencode's enabled-provider resolution and hermes's provider detection
+# both key off the prefix). The env file must carry ZAI_API_KEY.
+MODEL="${2:-zai/glm-5.3-flash}"
 
 NODE_BIN="${NODE_BIN:-node}"
 HARNESS_BIN="$(pwd)/bin/harness.js"
+
+# timeout(1) is GNU coreutils: always on Linux, absent on a stock macOS
+# (coreutils installs it as gtimeout). Resolve whichever exists; without
+# one, runs are unguarded by a wall clock.
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+if [ -z "$TIMEOUT_BIN" ]; then
+  echo "note: timeout(1) not found (macOS: brew install coreutils); running without time limits" >&2
+fi
+
+# Preflight: the resolved images must exist locally before burning scenarios on
+# them. HARNESS_IMAGE_TAG composes per-agent tags ("latest" -> "hermes-latest"),
+# so a host with only the pi image tagged "latest" fails all hermes scenarios
+# with an opaque docker error. Fail fast with the exact build command instead.
+if [ -n "${HARNESS_IMAGE_TAG:-}" ]; then
+  case "$AGENT" in
+    pi)     PREFIX="" ;;
+    *)      PREFIX="${AGENT}-" ;;
+  esac
+  REGISTRY="${HARNESS_REGISTRY:-ghcr.io/boldblackai/harness}"
+  # mirrors getImage() in src/harness.ts
+  MISSING="$REGISTRY:${PREFIX}${HARNESS_IMAGE_TAG}"
+  # the egress scenario also runs the gateway image
+  if [ "${SMOKE_EGRESS:-0}" = "1" ]; then
+    MISSING="$MISSING $REGISTRY:egress-proxy-${HARNESS_IMAGE_TAG}"
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    for img in $MISSING; do
+      if ! docker image inspect "$img" >/dev/null 2>&1; then
+        echo "error: image $img not found locally" >&2
+        echo "  build it first, e.g.:" >&2
+        echo "    make image-${AGENT} image-egress-proxy" >&2
+        echo "  (or tag an existing image: docker tag <existing-ref> $img)" >&2
+        exit 1
+      fi
+    done
+  fi
+fi
+
+# The scenarios assert docker-shaped behavior (entrypoint seeding, published
+# images); on macOS auto-detect would pick apple/container, where the pi
+# entrypoint seed currently fails. Force docker unless the caller overrides.
+export HARNESS_CONTAINER_RUNTIME="${HARNESS_CONTAINER_RUNTIME:-docker}"
 
 mkdir -p integration-output
 OUTPUT_DIR="$(pwd)/integration-output"
@@ -51,12 +90,30 @@ run_harness() {
 
   (
     cd "$workspace" || exit 1
-    timeout "$TIMEOUT" "$NODE_BIN" "$HARNESS_BIN" \
-      --agent "$AGENT" \
-      -m "$MODEL" \
-      -p "$prompt" \
-      -e "$ENV_FILE" \
-      > "$outfile" 2>&1
+    # </dev/null: force non-interactive runs. The script's own stdin is the
+    # caller's TTY; without this redirect node/docker try to allocate a raw
+    # terminal, which fails under GNU timeout's process-group isolation
+    # ("unable to set IO streams as raw terminal: interrupted system call")
+    # and hangs until the wall clock fires.
+    if [ -n "$TIMEOUT_BIN" ]; then
+      "$TIMEOUT_BIN" "$TIMEOUT" "$NODE_BIN" "$HARNESS_BIN" \
+        --agent "$AGENT" \
+        -m "$MODEL" \
+        -p "$prompt" \
+        -e "$ENV_FILE" \
+        ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
+        < /dev/null \
+        > "$outfile" 2>&1
+    else
+      "$NODE_BIN" "$HARNESS_BIN" \
+        --agent "$AGENT" \
+        -m "$MODEL" \
+        -p "$prompt" \
+        -e "$ENV_FILE" \
+        ${HARNESS_EXTRA_ARGS:+$HARNESS_EXTRA_ARGS} \
+        < /dev/null \
+        > "$outfile" 2>&1
+    fi
   )
   rc=$?
 
@@ -203,6 +260,86 @@ scenario_multi_file() {
   fi
 }
 
+# --- scenario 3 (opt-in): egress allowlist enforcement -------------------------
+# Gated behind SMOKE_EGRESS=1 (needs real docker; two extra agent runs).
+#
+# Seeds probe.mjs (a Node fetch one-shot; the base image ships Node 24 and
+# harness injects NODE_USE_ENV_PROXY=1 with --egress, so fetch honors the
+# squid gateway) and runs the agent twice under
+# --egress "api.z.ai,example.com" (api.z.ai keeps the model API reachable
+# so the agent can process the prompt at all):
+#   positive: probe https://example.com  -> "OK 200" (allowlisted, proxied)
+#   negative: probe https://iana.org     -> "ERR ..." (proxy-denied)
+
+scenario_egress() {
+  echo "  [egress] allowlisted destination reachable, non-allowlisted denied"
+  local allowlist="api.z.ai,example.com"
+
+  # One shared probe script; the target URL is argv[2].
+  local probe_ok_ws probe_deny_ws probe_ok_out probe_deny_out ok_result deny_result
+  probe_ok_ws="$(make_workspace)"
+  seed_probe "$probe_ok_ws"
+  probe_ok_out="$OUTPUT_DIR/${AGENT}-egress-allow.txt"
+
+  HARNESS_EXTRA_ARGS="--egress $allowlist" run_harness "$probe_ok_ws" \
+    'Run this shell command from the workspace root and let it finish: node probe.mjs https://example.com > result.txt 2>&1' \
+    "$probe_ok_out"
+  ok_result="$(cat "$probe_ok_ws/result.txt" 2>/dev/null | tail -1)"
+
+  probe_deny_ws="$(make_workspace)"
+  seed_probe "$probe_deny_ws"
+  probe_deny_out="$OUTPUT_DIR/${AGENT}-egress-deny.txt"
+
+  # The negative run's agent exit code can legitimately be non-zero (the
+  # command it ran failed, as intended) — only the probe output matters.
+  HARNESS_EXTRA_ARGS="--egress $allowlist" run_harness "$probe_deny_ws" \
+    'Run this shell command from the workspace root and let it finish: node probe.mjs https://iana.org > result.txt 2>&1' \
+    "$probe_deny_out" || true
+  deny_result="$(cat "$probe_deny_ws/result.txt" 2>/dev/null | tail -1)"
+
+  if [ -z "$ok_result" ] || [ -z "$deny_result" ]; then
+    check_fail "egress — probe result.txt missing (allow='${ok_result:-<none>}' deny='${deny_result:-<none>}')"
+    echo "    --- allow probe run output (tail) ---"
+    tail -30 "$probe_ok_out" 2>/dev/null | sed 's/^/    /'
+    echo "    --- deny probe run output (tail) ---"
+    tail -30 "$probe_deny_out" 2>/dev/null | sed 's/^/    /'
+    echo "    --- live egress state (should be empty after cleanup) ---"
+    docker network ls --format '{{.Name}}' 2>/dev/null | grep harness-egress | sed 's/^/    network: /'
+    docker ps -a --format '{{.Names}}' 2>/dev/null | grep harness-egress | sed 's/^/    container: /'
+    return
+  fi
+
+  if printf '%s' "$ok_result" | grep -q '^OK '; then
+    check_pass "egress — allowlisted example.com reachable ($ok_result)"
+  else
+    check_fail "egress — allowlisted example.com NOT reachable (got '$ok_result')"
+  fi
+
+  if printf '%s' "$deny_result" | grep -q '^ERR '; then
+    check_pass "egress — non-allowlisted iana.org denied ($deny_result)"
+  else
+    check_fail "egress — non-allowlisted iana.org NOT denied (got '$deny_result')"
+  fi
+}
+
+# Seed a probe workspace: probe.mjs (Node fetch one-shot) + pre-created
+# result.txt (0666 so container-written output stays host-readable).
+seed_probe() {
+  local ws="$1"
+  cat > "$ws/probe.mjs" <<'PROBE'
+const target = process.argv[2];
+try {
+  const r = await fetch(target);
+  console.log("OK " + r.status);
+} catch (e) {
+  console.log("ERR " + ((e && e.cause && e.cause.code) || e.message));
+}
+PROBE
+  chmod 0666 "$ws/probe.mjs"
+  touch "$ws/result.txt"
+  chmod 0666 "$ws/result.txt"
+}
+
 # --- run all scenarios --------------------------------------------------------
 
 echo ""
@@ -211,6 +348,9 @@ echo ""
 
 scenario_sentinel_edit
 scenario_multi_file
+if [ "${SMOKE_EGRESS:-0}" = "1" ]; then
+  scenario_egress
+fi
 
 echo ""
 echo "Results for $AGENT: $PASS passed, $FAIL failed"

@@ -1,7 +1,7 @@
 # Opt-in Egress Allowlisting for Agent Containers
 
 **Date:** 2026-10-08
-**Status:** Proposed
+**Status:** Implemented (Tier 1 + Tier 2; platform verification of the host-gateway route on `--internal` networks pending — see checklist)
 
 ## Goal
 
@@ -366,39 +366,46 @@ Walked one-by-one with the PR; rulings pinned in the table below.
 
 Tier 1:
 
-- [ ] `--network` flag + `HARNESS_NETWORK` env in `MINIMIST_OPTS` and
+- [x] `--network` flag + `HARNESS_NETWORK` env in `MINIMIST_OPTS` and
       consumption; forward in both `runArgs()` implementations
-- [ ] `--network host` warning
-- [ ] USAGE / README / AGENTS.md updates
-- [ ] e2e: flag forwarding both runtimes, host warning, unchanged-default-argv
+- [x] `--network host` warning
+- [x] USAGE / README / AGENTS.md updates
+- [x] e2e: flag forwarding both runtimes, host warning, unchanged-default-argv
       regression
-- [ ] RFC status → Implemented (Tier 1)
+- [x] RFC status → Implemented (Tier 1)
 
 Tier 2:
 
-- [ ] `Dockerfile.egress-proxy` (squid + dnsmasq + socat, apt-pinned) +
+- [x] `Dockerfile.egress-proxy` (squid + dnsmasq + socat, apt-pinned) +
       `Makefile image-egress-proxy` + `docker.yml` build/sign/attest
-- [ ] `--egress` flag: entry grammar parsing, `@file` form, validation
+      (dnsmasq + socat deferred with the raw-TCP extension — v1 gateway is
+      squid-only, per D4)
+- [x] `--egress` flag: entry grammar parsing, `@file` form, validation
       errors, mutual exclusion with `--network`, apple-runtime fail-closed
-- [ ] Subnet allocation + `docker network create --internal` + stale-network
+- [x] Subnet allocation + `docker network create --internal` + stale-network
       sweep
-- [ ] Gateway lifecycle (start `--rm -d`, config mount, stop + network rm on
+- [x] Gateway lifecycle (start `--rm -d`, config mount, stop + network rm on
       exit)
-- [ ] Agent container wiring: proxy env injection (after `--env-file`),
+- [x] Agent container wiring: proxy env injection (after `--env-file`),
       static gateway IP
-- [ ] squid ACL generation from the allowlist (HTTPS/CONNECT, 443 only;
+- [x] squid ACL generation from the allowlist (HTTPS/CONNECT, 443 only;
       non-443 entries rejected with a clear error)
-- [ ] Airgap mode: empty allowlist ⇒ internal network, no gateway, host
+- [x] Airgap mode: empty allowlist ⇒ internal network, no gateway, host
       reachable; e2e argv test + smoke scenario (local-LLM shape: helper on
       host-reachable port answers, internet helper unreachable)
-- [ ] Host-local entry class: `NO_PROXY` injection, `--add-host
+- [x] Host-local entry class: `NO_PROXY` injection, `--add-host
       host-gateway` on Linux, advisory-port semantics + error copy
 - [ ] Verify host-gateway route survives `--internal` per platform (Docker
       Desktop, Linux engine); document fallback if not
-- [ ] e2e argv tests + integration smoke scenario (allowlisted pass,
-      non-allowlisted fail, raw-TCP forward)
-- [ ] USAGE / README ("Egress control" section) / AGENTS.md updates
-- [ ] RFC status → Implemented (Tier 2)
+      (pending — needs Docker Desktop + a Linux engine; run
+      `SMOKE_EGRESS=1 scripts/smoke-test.sh` plus the airgap check
+      `harness --local --egress none` against a host port)
+- [x] e2e argv tests + integration smoke scenario (allowlisted pass,
+      non-allowlisted fail; raw-TCP forward is deferred with the extension)
+      (`SMOKE_EGRESS=1 scripts/smoke-test.sh` gates the live-docker
+      scenario; the shim-based e2e covers argv)
+- [x] USAGE / README ("Egress control" section) / AGENTS.md updates
+- [x] RFC status → Implemented (Tier 2)
 
 Deferred extension — raw-TCP forwarding (design retained, not scheduled;
 requires a confirmed direct-driver use case and a re-lock of this RFC):
