@@ -77,7 +77,10 @@ test("--egress none (local-only): internal network, no gateway, NO_PROXY only", 
   assert.ok(run, "expected an agent run");
   assert.match(run, /--network harness-egress-[0-9a-f]+/);
   assert.match(run, /NO_PROXY=localhost,127\.0\.0\.1,host\.docker\.internal/);
-  assert.ok(!run.includes("HTTPS_PROXY"), "local-only must not set HTTPS_PROXY");
+  assert.ok(
+    !run.includes("HTTPS_PROXY"),
+    "local-only must not set HTTPS_PROXY",
+  );
   assert.ok(
     calls.some((c) => /^network rm harness-egress-/.test(c)),
     "expected network rm cleanup",
@@ -261,12 +264,7 @@ test("mixed exact+suffix allowlist: gateway run succeeds, squid.conf has two ACL
   // attach) only happens when the conf generated; a bungled conf surfaces
   // live as gateway-exit-during-startup.
   const rec = withRecordingShim();
-  const r = runCli([
-    "-p",
-    "noop",
-    "--egress",
-    "api.anthropic.com,.openai.com",
-  ]);
+  const r = runCli(["-p", "noop", "--egress", "api.anthropic.com,.openai.com"]);
   assert.equal(r.status, 0, r.stderr);
   const calls = rec.calls();
   const gw = calls.find(

@@ -1127,9 +1127,7 @@ function generateSquidConfig(allowlist: EgressAllowlist): string {
     "pid_filename /tmp/squid.pid",
     "cache deny all",
     "coredump_dir /tmp",
-    ...(exact.length
-      ? [`acl exact-domains dstdomain ${exact.join(" ")}`]
-      : []),
+    ...(exact.length ? [`acl exact-domains dstdomain ${exact.join(" ")}`] : []),
     ...(suffix.length
       ? [`acl suffix-domains dstdomain ${suffix.join(" ")}`]
       : []),
