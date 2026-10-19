@@ -236,7 +236,7 @@ The value is forwarded verbatim to the container runtime (`docker run --network 
 ```text
 --egress "api.anthropic.com,api.openai.com,openrouter.ai,.amazonaws.com"
 --egress @/etc/harness/egress-allowlist.txt   # one entry per line, # comments
---egress none                                  # airgap: no gateway at all
+--egress none                                  # local-only: no gateway, host reachable
 ```
 
 | Entry | Meaning |
@@ -246,9 +246,9 @@ The value is forwarded verbatim to the container runtime (`docker run --network 
 | `host.docker.internal[:port]` | host-local destination: direct connection, never proxied (port advisory in v1) |
 | `host:port` | rejected in v1 — the raw-TCP extension is deferred (see the RFC) |
 
-`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` (and `NODE_USE_ENV_PROXY=1` — a Node ≥24 built-in that makes `fetch`/undici honor the proxy env vars) are injected after `--env-file`, so they take precedence over same-key values in a user env file. **The boundary is the network topology, not the env vars** — an agent that ignores the proxy env vars can still only reach the gateway. On Linux, `--add-host host.docker.internal:host-gateway` keeps the host reachable from the internal network (Docker Desktop provides this natively). The egress subnet pool defaults to `192.0.2.0/24` split into /29s; override with `HARNESS_EGRESS_SUBNET=<cidr>` when it collides with your networks. `--egress` is docker-only in v1 (the apple/container runtime fails closed with an error) and mutually exclusive with `--network`.
+`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` (and `NODE_USE_ENV_PROXY=1` — a Node ≥24 built-in that makes `fetch`/undici honor the proxy env vars) are injected after `--env-file`, so they take precedence over same-key values in a user env file. **The boundary is the network topology, not the env vars** — an agent that ignores the proxy env vars can still only reach the gateway. On Linux, harness maps `host.docker.internal` to the egress network's own gateway to keep the host reachable from the internal network (Docker Desktop provides `host.docker.internal` natively). The egress subnet pool defaults to `192.0.2.0/24` split into /29s; override with `HARNESS_EGRESS_SUBNET=<cidr>` when it collides with your networks. `--egress` is docker-only in v1 (the apple/container runtime fails closed with an error) and mutually exclusive with `--network`.
 
-Airgap mode pairs naturally with local mode: `harness --local --egress none` runs the agent against `host.docker.internal:1234` (LM Studio) with no route anywhere else — unlike `docker run --network none`, which would break local-LLM usage too.
+Local-only mode pairs naturally with local mode: `harness --local --egress none` runs the agent against `host.docker.internal:1234` (LM Studio) with no route anywhere else — unlike `docker run --network none`, which would break local-LLM usage too. On Linux the host is reached via the egress network's own gateway (harness maps `host.docker.internal` to it automatically).
 
 ## Reference
 
@@ -270,7 +270,7 @@ Airgap mode pairs naturally with local mode: `harness --local --egress none` run
 | `--local`     |       | Force local mode even with `-e` (use LM Studio / local defaults) |
 | `--mount-entire-home` | | Allow running from your home directory (mounts all of `$HOME` as the workspace) |
 | `--network`    |       | Attach the container to an existing network (e.g. one wired to a corp proxy); see [Egress control](#egress-control) |
-| `--egress`     |       | Restrict outbound traffic to an allowlist (hosts, `.suffix` domains, `@file`, or `none` for airgap); see [Egress control](#egress-control) |
+| `--egress`     |       | Restrict outbound traffic to an allowlist (hosts, `.suffix` domains, `@file`, or `none` for local-only); see [Egress control](#egress-control) |
 | `--help`      | `-h`  | Show help |
 
 ### Environment variables

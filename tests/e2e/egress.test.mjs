@@ -57,7 +57,7 @@ function agentRun(calls) {
   return runs[runs.length - 1];
 }
 
-test("--egress none (airgap): internal network, no gateway, NO_PROXY only", () => {
+test("--egress none (local-only): internal network, no gateway, NO_PROXY only", () => {
   const rec = withRecordingShim();
   const r = runCli(["-p", "noop", "--egress", "none"]);
   assert.equal(r.status, 0, r.stderr);
@@ -71,18 +71,37 @@ test("--egress none (airgap): internal network, no gateway, NO_PROXY only", () =
     !calls.some(
       (c) => c.startsWith("run ") && c.includes("harness-egress-gw-"),
     ),
-    "airgap must not start a gateway",
+    "local-only must not start a gateway",
   );
   const run = agentRun(calls);
   assert.ok(run, "expected an agent run");
   assert.match(run, /--network harness-egress-[0-9a-f]+/);
   assert.match(run, /NO_PROXY=localhost,127\.0\.0\.1,host\.docker\.internal/);
-  assert.ok(!run.includes("HTTPS_PROXY"), "airgap must not set HTTPS_PROXY");
+  assert.ok(!run.includes("HTTPS_PROXY"), "local-only must not set HTTPS_PROXY");
   assert.ok(
     calls.some((c) => /^network rm harness-egress-/.test(c)),
     "expected network rm cleanup",
   );
-  assert.match(r.stderr, /airgap mode/);
+  assert.match(r.stderr, /local-only mode/);
+});
+
+test("--egress with host-local-only list: same local-only shape (no gateway)", () => {
+  const rec = withRecordingShim();
+  const r = runCli(["-p", "noop", "--egress", "host.docker.internal:1234"]);
+  assert.equal(r.status, 0, r.stderr);
+  const calls = rec.calls();
+  assert.ok(
+    !calls.some(
+      (c) => c.startsWith("run ") && c.includes("harness-egress-gw-"),
+    ),
+    "host-local-only list must not start a gateway",
+  );
+  const run = agentRun(calls);
+  assert.ok(run, "expected an agent run");
+  assert.match(run, /--network harness-egress-[0-9a-f]+/);
+  assert.match(run, /NO_PROXY=localhost,127\.0\.0\.1,host\.docker\.internal/);
+  assert.ok(!run.includes("HTTPS_PROXY"));
+  assert.match(r.stderr, /local-only mode/);
 });
 
 test("--egress with hosts: gateway started with hardened flags, proxy env injected after --env-file", () => {
@@ -231,5 +250,45 @@ test("default argv unchanged: no egress calls leak without the flag", () => {
   assert.ok(
     !run.includes("HTTPS_PROXY"),
     "default path must not set proxy env",
+  );
+});
+
+test("mixed exact+suffix allowlist: gateway run succeeds, squid.conf has two ACLs", () => {
+  // The RFC's flagship example shape. Squid 6.x rejects a single dstdomain
+  // ACL mixing bare hosts with .suffix entries ("Bungled ... acl"), which
+  // killed the gateway at startup before the two-ACL split. The recording
+  // shim cannot parse squid.conf, but the bring-up (gateway run + bridge
+  // attach) only happens when the conf generated; a bungled conf surfaces
+  // live as gateway-exit-during-startup.
+  const rec = withRecordingShim();
+  const r = runCli([
+    "-p",
+    "noop",
+    "--egress",
+    "api.anthropic.com,.openai.com",
+  ]);
+  assert.equal(r.status, 0, r.stderr);
+  const calls = rec.calls();
+  const gw = calls.find(
+    (c) => c.startsWith("run ") && c.includes("harness-egress-gw-"),
+  );
+  assert.ok(gw, `expected gateway run in: ${calls.join(" | ")}`);
+  assert.match(r.stderr, /egress allowlist active — 2 destination/);
+});
+
+test("host.docker.internal maps to the egress network gateway on Linux, not host-gateway", () => {
+  const rec = withRecordingShim();
+  const r = runCli(["-p", "noop", "--egress", "api.anthropic.com"]);
+  if (process.platform !== "linux") return; // add-host is Linux-only
+  assert.equal(r.status, 0, r.stderr);
+  const run = agentRun(rec.calls());
+  assert.match(
+    run,
+    /--add-host host\.docker\.internal:192\.0\.2\.\d+\b/,
+    `expected per-network gateway mapping: ${run}`,
+  );
+  assert.ok(
+    !run.includes("host-gateway"),
+    "host-gateway is unreachable from --internal networks (off-subnet)",
   );
 });
