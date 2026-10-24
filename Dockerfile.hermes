@@ -109,7 +109,21 @@ RUN apt-get update && \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer-package 'certifi=2999-01-01T00:00:00Z' "certifi==2026.10.19" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
-    && cd /opt/hermes-agent/web && npm install && npm run build && cd / \
+    && cd /opt/hermes-agent \
+    # Build the web UI with PM's pinned node, not the base image's (#204).
+    # The build receipt (web_dist/hermes-build.json) records the node that
+    # compiled it; hermes v0.21.6 reads that receipt only via PM's node and
+    # requires the recorded version to match the reader's. A dist baked with
+    # the base image's node reads stale forever, boot attempts a rebuild, and
+    # with web/node_modules pruned and lazy installs disabled that rebuild can
+    # never succeed — the dashboard container crash-loops.
+    && python3 -c 'from pm import ensure; ensure("node", explicit=True); ensure("npm", explicit=True)' \
+    && PM_NODE_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("node", path=env_for("npm")["PATH"]))')" \
+    && PM_NPM_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("npm", path=env_for("npm")["PATH"]))')" \
+    && cd /opt/hermes-agent/web \
+    && PATH="$(dirname "$PM_NODE_BIN"):$(dirname "$PM_NPM_BIN"):$PATH" npm install \
+    && PATH="$(dirname "$PM_NODE_BIN"):$(dirname "$PM_NPM_BIN"):$PATH" npm run build \
+    && cd / \
     && chown -R harness:harness /opt/hermes-agent \
     && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv \
     && rm -rf /var/lib/apt/lists/*
@@ -144,6 +158,12 @@ RUN apt-get update && \
 
 COPY hermes/local.yaml /etc/harness/hermes-local.yaml
 
+# Pin the dashboard to the image-baked web dist (#204). With this set,
+# `hermes dashboard` validates the dist and serves it; it never consults
+# build freshness (which would require PM's node and web/node_modules —
+# both deliberately excluded from the runtime image). This mirrors the
+# env hermes-agent's own Docker image sets for the same reason.
+ENV HERMES_WEB_DIST=/opt/hermes-agent/hermes_cli/web_dist
 ENV HERMES_DISABLE_LAZY_INSTALLS=1
 
 COPY entrypoint-hermes.sh /entrypoint.sh
