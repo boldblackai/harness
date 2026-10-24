@@ -125,7 +125,7 @@ RUN apt-get update && \
     && PATH="$(dirname "$PM_NODE_BIN"):$(dirname "$PM_NPM_BIN"):$PATH" npm run build \
     && cd / \
     && chown -R harness:harness /opt/hermes-agent \
-    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv \
+    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv /root/.hermes /root/.npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Chromium shared libraries required to run Playwright browsers (the default
