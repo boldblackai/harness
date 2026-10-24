@@ -118,11 +118,17 @@ RUN apt-get update && \
     # with web/node_modules pruned and lazy installs disabled that rebuild can
     # never succeed — the dashboard container crash-loops.
     && python3 -c 'from pm import ensure; ensure("node", explicit=True); ensure("npm", explicit=True)' \
+    # Resolve the PM-provisioned bins and fail loud if either is missing — a
+    # silent miss would degrade PATH to the base image's node and recreate the
+    # stale-receipt crash loop this fixes (#204). npm's bin dir goes FIRST so
+    # PM's pinned npm shadows the npm bundled inside node, matching the PATH
+    # order pm.env_for composes (pm/package.py: npm must shadow node's npm).
     && PM_NODE_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("node", path=env_for("npm")["PATH"]))')" \
     && PM_NPM_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("npm", path=env_for("npm")["PATH"]))')" \
+    && test -n "$PM_NODE_BIN" && test -n "$PM_NPM_BIN" \
     && cd /opt/hermes-agent/web \
-    && PATH="$(dirname "$PM_NODE_BIN"):$(dirname "$PM_NPM_BIN"):$PATH" npm install \
-    && PATH="$(dirname "$PM_NODE_BIN"):$(dirname "$PM_NPM_BIN"):$PATH" npm run build \
+    && PATH="$(dirname "$PM_NPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" npm install \
+    && PATH="$(dirname "$PM_NPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" npm run build \
     && cd / \
     && chown -R harness:harness /opt/hermes-agent \
     && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv /root/.hermes /root/.npm \
