@@ -1,6 +1,6 @@
 {
   "name": "@boldblackai/harness",
-  "version": "1.11.1",
+  "version": "1.12.0",
   "description": "Portable environment for running coding agents in a container",
   "bin": {
     "harness": "bin/harness.js"

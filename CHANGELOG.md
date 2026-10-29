@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.12.0] - 2026-10-29
+
+### Summary
+
+Feature release. The hermes image gains the `sqlite3` CLI for direct inspection and recovery of SQLite databases (state.db, kanban DBs) and the `anthropic` extra, so `provider=anthropic` works on an image whose lazy installs are disabled. Fixes the dashboard-container crash loop: the web UI dist is now built with the version manager's pinned node (receipt mismatch previously forced a boot-time rebuild that could not succeed by construction), and `HERMES_WEB_DIST` pins the dashboard to the baked dist. Also refreshes five pinned dependencies (weekly sweep, 7-day cooldown): hermes-agent v0.21.6 → v0.22.2, `pi-coding-agent` 1.1.0 → 1.3.0, `opencode-ai` 1.19.0 → 1.19.3, pnpm 12.12.1 → 12.14.0, mise 2026.10.8 → 2026.10.13.
+
+### Added
+
+- `sqlite3` CLI baked into the hermes image for direct SQLite inspection and recovery; the venv keeps the bundled newer SQLite, so the two do not interact (#207)
+- `anthropic` extra baked into the hermes venv, so `provider=anthropic` loads on an image with lazy installs disabled (#207)
+
+### Fixed
+
+- Dashboard container crash loop on hermes images: the web dist is built with the version manager's pinned node instead of the base image's node, so the build receipt no longer reads stale; `HERMES_WEB_DIST` pins the dashboard to the baked dist and boot no longer attempts a rebuild that cannot succeed (#208)
+
+### Dependency Updates
+
+- updated hermes-agent from v0.21.6 to v0.22.2
+- updated @earendil-works/pi-coding-agent from 1.1.0 to 1.3.0
+- updated opencode-ai from 1.19.0 to 1.19.3
+- updated pnpm from 12.12.1 to 12.14.0
+- updated mise from 2026.10.8 to 2026.10.13
+
+### Changes
+
+- 066a1f3 fix(hermes): build web dist with PM's pinned node; pin dashboard to baked dist (#208)
+- a17bb47 feat(hermes): bake sqlite3 CLI and the anthropic extra into the image (#207)
+- b0cb7eb deps: bump pi 1.1.0→1.3.0, opencode 1.19.0→1.19.3, pnpm 12.12.1→12.14.0, mise 2026.10.8→2026.10.13, hermes v0.21.6→v0.22.2 (7-day cooldown) (#206)
+
 ## [1.11.1] - 2026-10-22
 
 ### Summary
