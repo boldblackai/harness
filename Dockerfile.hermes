@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=ghcr.io/boldblackai/harness:latest
-ARG UV_DIGEST=sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b
+ARG UV_DIGEST=sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
 
 FROM ghcr.io/astral-sh/uv@${UV_DIGEST} AS uv-src
 
@@ -7,11 +7,11 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG UV_VERSION=0.13.4
-ARG UV_DIGEST=sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b
-ARG COSIGN_VERSION=3.1.3
-ARG COSIGN_AMD64_SHA256=4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71
-ARG COSIGN_ARM64_SHA256=c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a
+ARG UV_VERSION=0.13.5
+ARG UV_DIGEST=sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
+ARG COSIGN_VERSION=3.1.4
+ARG COSIGN_AMD64_SHA256=424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+ARG COSIGN_ARM64_SHA256=ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2
 ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -104,7 +104,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3-dev build-essential git libffi-dev libolm-dev \
     && uv python install --no-cache 3.14.7 \
-    && git clone --depth 1 --branch v0.22.2 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git clone --depth 1 --branch v0.22.4 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python 3.14.7 \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer-package 'certifi=2999-01-01T00:00:00Z' "certifi==2026.10.19" \

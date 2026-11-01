@@ -1,8 +1,8 @@
-FROM debian:stable-slim@sha256:a717a33469731894e77e912ea7d714e27c2dc38ee6554fd1a3102e92999cfc66
+FROM debian:stable-slim@sha256:13e0a2e78aa0554ad5ff66e4e260c6dbcdff807eb1f39d43b9fb0288aae88b04
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG GH_VERSION="2.102.0"
+ARG GH_VERSION="2.103.2"
 ARG TARGETARCH
 
 # hadolint ignore=DL3008
@@ -54,13 +54,13 @@ ENV PATH=$PNPM_HOME/bin:$PNPM_HOME:$PATH
 RUN set -eux; \
     corepack enable; \
     attempt=1; \
-    until corepack prepare pnpm@12.14.0 --activate; do \
+    until corepack prepare pnpm@12.15.0 --activate; do \
         if [ "$attempt" -ge 5 ]; then echo "corepack prepare failed after $attempt attempts" >&2; exit 1; fi; \
         echo "corepack prepare attempt $attempt failed; retrying in 15s"; \
         attempt=$((attempt+1)); sleep 15; \
     done; \
     attempt=1; \
-    until pnpm install -g @earendil-works/pi-coding-agent@1.3.0; do \
+    until pnpm install -g @earendil-works/pi-coding-agent@1.4.0; do \
         if [ "$attempt" -ge 5 ]; then echo "pnpm install failed after $attempt attempts" >&2; exit 1; fi; \
         echo "pnpm install attempt $attempt failed; retrying in 15s"; \
         attempt=$((attempt+1)); sleep 15; \
@@ -73,10 +73,10 @@ RUN set -eux; \
 COPY pi/models.json /etc/harness/pi-defaults/models.json
 
 # Install mise (polyglot version manager)
-# Checksums from: https://github.com/jdx/mise/releases/download/v2026.10.13/SHASUMS256.txt
-ENV MISE_VERSION=2026.10.13
-ENV MISE_AMD64_SHA256=94c45523c7b6760b7da704f16051171ca32e8447a849a02266a439a4455e9a12
-ENV MISE_ARM64_SHA256=983fabf36625566f216400b907b33b4daca99adb5bc3d3cdab123b5e791575b2
+# Checksums from: https://github.com/jdx/mise/releases/download/v2026.10.19/SHASUMS256.txt
+ENV MISE_VERSION=2026.10.19
+ENV MISE_AMD64_SHA256=3162760f40b6b5f706c60641e4ef5ee7322bc6c54f72fc26a7111b337aa18d9d
+ENV MISE_ARM64_SHA256=4a4ca53b28e5433c527f4f73fac1f98f992a17cf32ca136a58e2e375f790f627
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     case "${ARCH}" in \
