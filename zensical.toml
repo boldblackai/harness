@@ -21,6 +21,7 @@ nav = [
     { "fly.io" = "deploying/fly.md" },
     { "Kubernetes" = "deploying/k8s.md" },
     { "AWS" = "deploying/aws.md" },
+    { "Linear integration" = "deploying/linear.md" },
   ] },
   { "GitHub auth" = "github.md" },
   { "Configuration" = "configuration.md" },

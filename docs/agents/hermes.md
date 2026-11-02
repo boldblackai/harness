@@ -35,3 +35,5 @@ Hermes can be deployed as a long-running persistent agent ("claw") reachable ove
 - [fly.io](../deploying/fly.md)
 - [Kubernetes](../deploying/k8s.md)
 - [AWS (ECS Fargate or EC2 + SSM)](../deploying/aws.md)
+
+To interact with a gateway from Linear issues, see the optional [Linear agent-session integration](../deploying/linear.md).

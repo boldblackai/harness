@@ -339,6 +339,8 @@ You can run `hermes` as a long-running "claw" — a persistent agent process rea
 - [Kubernetes](docs/deploying/k8s.md)
 - [AWS (ECS Fargate or EC2 + SSM)](docs/deploying/aws.md)
 
+An optional [Linear agent-session integration](docs/deploying/linear.md) adds mentions, delegation, follow-ups, and progress updates through a Hermes plugin and an outbound SQS consumer. The example includes a standalone AWS receiver template; it does not change the Harness image or CLI.
+
 ## Developing
 
 Link your local checkout globally:

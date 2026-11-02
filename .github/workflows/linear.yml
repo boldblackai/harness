@@ -1,0 +1,22 @@
+name: Linear integration example
+on:
+  pull_request:
+    paths:
+      - "examples/linear/**"
+      - ".github/workflows/linear.yml"
+  push:
+    branches: [main]
+    paths:
+      - "examples/linear/**"
+      - ".github/workflows/linear.yml"
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Test without AWS, Linear, or model credentials
+        run: python3 -m unittest discover -s examples/linear/tests -v
+      - name: Render standalone infrastructure
+        run: python3 examples/linear/render_template.py > /tmp/linear-template.json

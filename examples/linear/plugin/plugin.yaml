@@ -1,0 +1,5 @@
+name: harness-linear-agent
+version: 1.0.0
+description: "Linear agent sessions through a signed webhook and outbound SQS polling."
+author: Harness contributors
+kind: standalone

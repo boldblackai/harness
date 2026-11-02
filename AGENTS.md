@@ -92,6 +92,8 @@ Custom composite action: `.github/actions/attest-provenance` for SLSA provenance
 
 ## Tests
 
+The optional Linear deployment example lives in `examples/linear/`; its Hermes directory plugin is installed into persisted `HERMES_HOME/plugins`, never baked into the image. `render_template.py` generates a separate AWS webhook/SQS stack for an existing gateway role. It has no organization-specific defaults or CLI integration. See `docs/deploying/linear.md` and `rfcs/2026-11-01_linear_agent_example.md`. Run its offline tests with `python3 -m unittest discover -s examples/linear/tests -v`; `.github/workflows/linear.yml` runs these on example changes. Recheck the plugin against the Hermes version in `Dockerfile.hermes` when upgrading, especially its internal session-task tracking and final-response metadata.
+
 E2E tests in `tests/e2e/*.test.mjs` (with shared helpers in `helpers.mjs`) use a docker shim (a fake `docker` binary that prints `DOCKER_INVOKED <args>`) to exercise the full CLI without requiring Docker. Files run in lexicographic order: `adapters → mounts → parsing → persistence → runtime`. Tests cover:
 
 - Argument parsing and validation (`--help`, unknown agent, missing files)
