@@ -1,0 +1,632 @@
+#!/opt/hermes-agent/venv/bin/python3
+"""Short-lived GitHub App authentication for a Harness Hermes gateway.
+
+The helper fetches three configured SSM parameters on demand via
+the workload role.  Long-lived App credentials never enter Hermes' environment
+or the persistent gh config.  Installation tokens are cached only in /tmp and
+are refreshed five minutes before expiry.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import fcntl
+import hashlib
+import shlex
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Any, NoReturn
+from urllib.parse import quote
+
+import boto3
+import jwt
+import requests
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+GITHUB_API = "https://api.github.com"
+GITHUB_API_VERSION = "2022-11-28"
+REAL_GH = "/usr/local/bin/gh"
+REAL_GIT = "/usr/bin/git"
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", "/home/harness/.hermes"))
+CONFIG_PATH = Path(os.environ.get(
+    "GITHUB_APP_AUTH_CONFIG", str(HERMES_HOME / "github-app-auth" / "config.json")
+)).resolve()
+IDENTITY_STATE_PATH = CONFIG_PATH.with_name(CONFIG_PATH.name + ".git-state.json")
+CACHE_NAMESPACE = hashlib.sha256(str(CONFIG_PATH).encode()).hexdigest()[:16]
+CACHE_DIR = Path("/tmp") / f"harness-github-app-{os.getuid()}-{CACHE_NAMESPACE}"
+TOKEN_PATH = CACHE_DIR / "installation-token.json"
+LOCK_PATH = CACHE_DIR / "installation-token.lock"
+REFRESH_SKEW_SECONDS = 300
+
+
+class AuthError(RuntimeError):
+    """An authentication error safe to show without exposing credentials."""
+
+
+def _fail(message: str) -> NoReturn:
+    print(f"github-app-auth: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def _ensure_cache_dir() -> None:
+    try:
+        CACHE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        info = CACHE_DIR.lstat()
+    except OSError as exc:
+        raise AuthError(f"cannot create runtime cache directory: {exc}") from exc
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise AuthError("runtime cache directory is not owned by the current user")
+    CACHE_DIR.chmod(0o700)
+
+
+def _load_policy() -> dict[str, Any]:
+    try:
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AuthError(f"cannot read {CONFIG_PATH}: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise AuthError("config must be a JSON object")
+    repository_ids = raw.get("repository_ids")
+    repositories = raw.get("repositories")
+    permissions = raw.get("permissions")
+    if not isinstance(repository_ids, list) or not 1 <= len(repository_ids) <= 500:
+        raise AuthError("config repository_ids must contain 1 to 500 entries")
+    if not all(isinstance(item, int) and item > 0 for item in repository_ids):
+        raise AuthError("config repository_ids must contain positive integers")
+    if not isinstance(repositories, list) or len(repositories) != len(repository_ids):
+        raise AuthError("config repositories must match repository_ids")
+    repo_pattern = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    if not all(isinstance(item, str) and repo_pattern.fullmatch(item) for item in repositories):
+        raise AuthError("config repositories contains an invalid owner/name")
+    if len(set(repository_ids)) != len(repository_ids) or len(set(repositories)) != len(repositories):
+        raise AuthError("config repositories and IDs must be unique")
+    if any(type(item) is not int for item in repository_ids):
+        raise AuthError("config repository IDs must be integers, not booleans")
+    if (not isinstance(permissions, dict) or not permissions
+            or not set(permissions) <= {"contents", "pull_requests"}
+            or any(level not in ("read", "write") for level in permissions.values())):
+        raise AuthError("config permits only contents/pull_requests read or write")
+    prefix = raw.get("ssm_parameter_prefix", "")
+    if not isinstance(prefix, str) or not re.fullmatch(r"/[A-Za-z0-9_.\-/]+", prefix) or prefix.endswith("/"):
+        raise AuthError("config ssm_parameter_prefix must be an absolute SSM prefix without a trailing slash")
+    return {
+        "repository_ids": repository_ids,
+        "repositories": repositories,
+        "permissions": permissions,
+        "ssm_parameter_prefix": prefix,
+    }
+
+
+def _load_app_credentials() -> tuple[str, str, str]:
+    prefix = _load_policy()["ssm_parameter_prefix"]
+    names = {key: prefix + "/" + suffix for key, suffix in (
+        ("app_id", "GITHUB_APP_ID"), ("installation_id", "GITHUB_APP_INSTALLATION_ID"),
+        ("private_key", "GITHUB_APP_PRIVATE_KEY"))}
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    try:
+        client = boto3.client("ssm", region_name=region)
+        response = client.get_parameters(
+            Names=list(names.values()),
+            WithDecryption=True,
+        )
+    except Exception as exc:  # botocore errors are safe but vary by version
+        raise AuthError(f"SSM credential lookup failed: {type(exc).__name__}") from exc
+
+    invalid = response.get("InvalidParameters") or []
+    if invalid:
+        raise AuthError("one or more GitHub App SSM parameters are missing")
+    values = {
+        item["Name"]: item["Value"]
+        for item in response.get("Parameters", [])
+        if "Name" in item and "Value" in item
+    }
+    missing = [name for name in names.values() if name not in values]
+    if missing:
+        raise AuthError("SSM returned an incomplete GitHub App credential set")
+    if not all(isinstance(values[name], str) for name in names.values()):
+        raise AuthError("SSM returned invalid GitHub App credentials")
+
+    app_id = values[names["app_id"]].strip()
+    installation_id = values[names["installation_id"]].strip()
+    if not app_id.isdecimal() or int(app_id) <= 0:
+        raise AuthError("GITHUB_APP_ID must be a positive integer")
+    if not installation_id.isdecimal() or int(installation_id) <= 0:
+        raise AuthError("GITHUB_APP_INSTALLATION_ID must be a positive integer")
+
+    # The AWS console is often given a JSON-style PEM containing literal \n.
+    # Accept both that representation and a true multiline PEM.
+    private_key = values[names["private_key"]].replace("\\n", "\n").strip() + "\n"
+    try:
+        parsed_key = serialization.load_pem_private_key(
+            private_key.encode("utf-8"), password=None
+        )
+    except (TypeError, ValueError) as exc:
+        raise AuthError("GITHUB_APP_PRIVATE_KEY is not a valid unencrypted PEM") from exc
+    if not isinstance(parsed_key, rsa.RSAPrivateKey):
+        raise AuthError("GITHUB_APP_PRIVATE_KEY must contain an RSA private key")
+    return app_id, installation_id, private_key
+
+
+def _app_jwt(app_id: str, private_key: str) -> str:
+    now = int(time.time())
+    encoded = jwt.encode(
+        {"iat": now - 60, "exp": now + 540, "iss": app_id},
+        private_key,
+        algorithm="RS256",
+        headers={"typ": "JWT"},
+    )
+    return encoded.decode("ascii") if isinstance(encoded, bytes) else encoded
+
+
+def _headers(bearer: str) -> dict[str, str]:
+    return {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {bearer}",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": "harness-github-app-auth",
+    }
+
+
+def _safe_github_error(response: requests.Response, action: str) -> AuthError:
+    request_id = response.headers.get("x-github-request-id", "unknown")
+    if not re.fullmatch(r"[A-Za-z0-9:-]{1,100}", request_id):
+        request_id = "unknown"
+    # Never include response bodies: an upstream/proxy error may echo credentials.
+    return AuthError(f"GitHub {action} failed (HTTP {response.status_code}, request {request_id})")
+
+
+def _parse_expiry(value: str) -> int:
+    try:
+        if not isinstance(value, str):
+            raise ValueError()
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError()
+        return int(parsed.timestamp())
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise AuthError("GitHub returned an invalid token expiry") from exc
+
+
+def _read_cached_token() -> dict[str, Any] | None:
+    try:
+        info = TOKEN_PATH.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            return None
+        data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or info.st_mode & 0o077:
+            return None
+        token = data.get("token")
+        expires_at = data.get("expires_at")
+        if not isinstance(token, str) or not token or any(char.isspace() for char in token):
+            return None
+        if _parse_expiry(expires_at) <= int(time.time()) + REFRESH_SKEW_SECONDS:
+            return None
+        return data
+    except (OSError, json.JSONDecodeError, AuthError):
+        return None
+
+
+def _write_cached_token(data: dict[str, Any]) -> None:
+    fd, temp_name = tempfile.mkstemp(prefix="token-", dir=CACHE_DIR)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, separators=(",", ":"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, TOKEN_PATH)
+        TOKEN_PATH.chmod(0o600)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
+def _mint_token(policy: dict[str, Any]) -> dict[str, Any]:
+    app_id, installation_id, private_key = _load_app_credentials()
+    app_jwt = _app_jwt(app_id, private_key)
+    try:
+        response = requests.post(
+            f"{GITHUB_API}/app/installations/{installation_id}/access_tokens",
+            headers=_headers(app_jwt),
+            json={
+                "repository_ids": policy["repository_ids"],
+                "permissions": policy["permissions"],
+            },
+            timeout=(5, 20),
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise AuthError(f"GitHub token request failed: {type(exc).__name__}") from exc
+    if response.status_code != 201:
+        raise _safe_github_error(response, "token request")
+    try:
+        payload = response.json()
+        token = payload["token"]
+        expires_at = payload["expires_at"]
+        returned_permissions = payload["permissions"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise AuthError("GitHub returned an incomplete token response") from exc
+    if not isinstance(token, str) or not token or any(char.isspace() for char in token):
+        raise AuthError("GitHub returned an invalid installation token")
+    allowed_returned_permissions = {
+        **policy["permissions"],
+        # GitHub grants repository metadata read access implicitly.
+        "metadata": "read",
+    }
+    if not isinstance(returned_permissions, dict):
+        raise AuthError("GitHub returned invalid permissions")
+    if any(
+        allowed_returned_permissions.get(name) != level
+        for name, level in returned_permissions.items()
+    ) or any(
+        returned_permissions.get(name) != level
+        for name, level in policy["permissions"].items()
+    ):
+        raise AuthError("GitHub returned permissions outside the configured policy")
+    if _parse_expiry(expires_at) <= int(time.time()) + REFRESH_SKEW_SECONDS:
+        raise AuthError("GitHub returned an expired or nearly expired token")
+    return {
+        "token": token,
+        "expires_at": expires_at,
+        "permissions": returned_permissions,
+        "requested_permissions": policy["permissions"],
+        "repository_ids": policy["repository_ids"],
+    }
+
+
+def _token_record(force_refresh: bool = False) -> dict[str, Any]:
+    policy = _load_policy()
+    context = {**policy, "region": os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION"),
+               "profile": os.environ.get("AWS_PROFILE")}
+    fingerprint = hashlib.sha256(json.dumps(context, sort_keys=True).encode()).hexdigest()
+    _ensure_cache_dir()
+    lock_fd = os.open(LOCK_PATH, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        os.fchmod(lock_fd, 0o600)
+        with os.fdopen(lock_fd, "r+", encoding="utf-8") as lock_stream:
+            fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+            cached = None if force_refresh else _read_cached_token()
+            if cached is not None and (
+                cached.get("policy_fingerprint") == fingerprint
+                and cached.get("requested_permissions") == policy["permissions"]
+                and cached.get("repository_ids") == policy["repository_ids"]
+            ):
+                return cached
+            minted = _mint_token(policy)
+            minted["policy_fingerprint"] = fingerprint
+            _write_cached_token(minted)
+            return minted
+    except OSError as exc:
+        raise AuthError(f"cannot lock token cache: {exc}") from exc
+
+
+def _clear_cache() -> None:
+    try:
+        TOKEN_PATH.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _run_gh(arguments: list[str]) -> NoReturn:
+    if arguments[:2] == ["auth", "status"]:
+        # `gh auth status` is user-login-oriented and cannot validate an App
+        # installation token reliably.  Answer it with our App-specific,
+        # token-safe diagnostic so callers do not mistake the deliberately
+        # absent user login for missing GitHub access.
+        _diagnose(force_refresh=False)
+        raise SystemExit(0)
+
+    if arguments[:1] == ["auth"]:
+        raise AuthError(
+            "gh auth commands are disabled; GitHub App authentication is automatic"
+        )
+    record = _token_record()
+    env = os.environ.copy()
+    env.pop("GITHUB_TOKEN", None)
+    env.pop("GH_ENTERPRISE_TOKEN", None)
+    env.pop("GITHUB_ENTERPRISE_TOKEN", None)
+    env.pop("GH_DEBUG", None)
+    env.pop("GH_FORCE_TTY", None)
+    env["GH_TOKEN"] = record["token"]
+    env["GH_HOST"] = "github.com"
+    env["GH_PAGER"] = "cat"
+    env["GH_PROMPT_DISABLED"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["NO_COLOR"] = "1"
+    os.execve(REAL_GH, [REAL_GH, *arguments], env)
+
+
+def _credential(action: str) -> None:
+    if action in {"store", "capability"}:
+        return
+    if action == "erase":
+        _clear_cache()
+        return
+    if action != "get":
+        raise AuthError(f"unsupported Git credential action: {action}")
+
+    fields: dict[str, str] = {}
+    for line in sys.stdin:
+        line = line.rstrip("\n")
+        if not line:
+            break
+        key, separator, value = line.partition("=")
+        if separator:
+            fields[key] = value
+    if fields.get("protocol") != "https" or fields.get("host") not in {
+        "github.com",
+        "github.com:443",
+    }:
+        return
+
+    path = fields.get("path", "").removesuffix(".git").strip("/")
+    allowed = set(_load_policy()["repositories"])
+    if path not in allowed:
+        return
+    token = _token_record()["token"]
+    sys.stdout.write(f"username=x-access-token\npassword={token}\n\n")
+    sys.stdout.flush()
+
+
+def _git_config(arguments: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.setdefault("GIT_CONFIG_GLOBAL", "/home/harness/.config/gitconfig")
+    return subprocess.run(
+        [REAL_GIT, "config", "--global", *arguments],
+        env=env,
+        check=check,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _read_identity_state() -> dict[str, Any] | None:
+    try:
+        raw = json.loads(IDENTITY_STATE_PATH.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise AuthError("cannot read previous Git configuration") from exc
+    if not isinstance(raw, dict) or raw.get("version") != 1:
+        raise AuthError("Git configuration state has an unsupported version")
+    if raw.get("git_config") != _git_config_path():
+        raise AuthError("saved Git state belongs to a different global config; restore it before switching configs")
+    for section in ("previous", "app"):
+        values = raw.get(section)
+        if (not isinstance(values, dict) or set(values) != set(GIT_KEYS)
+                or any(not isinstance(v, list) or not all(isinstance(s, str) for s in v)
+                       for v in values.values())):
+            raise AuthError("Git configuration state is incomplete")
+    return raw
+
+
+def _write_identity_state(state: dict[str, Any]) -> None:
+    IDENTITY_STATE_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix="git-state-", dir=IDENTITY_STATE_PATH.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(state, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, IDENTITY_STATE_PATH)
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
+
+
+def _app_identity() -> tuple[str, str]:
+    app_id, _installation_id, private_key = _load_app_credentials()
+    bearer = _app_jwt(app_id, private_key)
+    try:
+        app_response = requests.get(
+            f"{GITHUB_API}/app",
+            headers=_headers(bearer),
+            timeout=(5, 20),
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise AuthError(f"GitHub App identity request failed: {type(exc).__name__}") from exc
+    if app_response.status_code != 200:
+        raise _safe_github_error(app_response, "App identity request")
+    try:
+        slug = app_response.json()["slug"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise AuthError("GitHub returned an incomplete App identity") from exc
+    if not isinstance(slug, str) or not re.fullmatch(r"[A-Za-z0-9-]+", slug):
+        raise AuthError("GitHub returned an invalid App slug")
+
+    bot_login = f"{slug}[bot]"
+    try:
+        user_response = requests.get(
+            f"{GITHUB_API}/users/{quote(bot_login, safe='')}",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": GITHUB_API_VERSION,
+                "User-Agent": "harness-github-app-auth",
+            },
+            timeout=(5, 20),
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise AuthError(f"GitHub bot identity request failed: {type(exc).__name__}") from exc
+    if user_response.status_code != 200:
+        raise _safe_github_error(user_response, "bot identity request")
+    try:
+        bot_id = int(user_response.json()["id"])
+    except (ValueError, KeyError, TypeError) as exc:
+        raise AuthError("GitHub returned an incomplete bot identity") from exc
+    return bot_login, f"{bot_id}+{bot_login}@users.noreply.github.com"
+
+
+GIT_KEYS = (
+    "credential.https://github.com.helper", "credential.https://github.com.useHttpPath",
+    "user.name", "user.email",
+)
+
+
+def _git_config_path():
+    return str(Path(os.environ.get("GIT_CONFIG_GLOBAL", "/home/harness/.config/gitconfig")).resolve())
+
+
+def _git_values(key):
+    result = _git_config(["--null", "--get-all", key], check=False)
+    if result.returncode not in (0, 1):
+        raise AuthError("cannot read Git configuration")
+    return result.stdout.removesuffix("\0").split("\0") if result.returncode == 0 else []
+
+
+def _set_git_values(key, values):
+    result = _git_config(["--unset-all", key], check=False)
+    if result.returncode not in (0, 5):
+        raise AuthError("cannot remove old Git configuration")
+    for value in values:
+        _git_config(["--add", key, value])
+
+
+def _configure_git() -> None:
+    _load_policy()  # Reject an unreviewed/empty policy before changing Git.
+    name, email = _app_identity()
+    state = _read_identity_state()
+    if state is None:
+        state = {"version": 1, "git_config": _git_config_path(),
+                 "previous": {key: _git_values(key) for key in GIT_KEYS}}
+    helper = "!" + shlex.quote(str(Path(__file__).resolve())) + " credential"
+    state["app"] = dict(zip(GIT_KEYS, [["", helper], ["true"], [name], [email]]))
+    # Save before edits so a partial setup can still restore each applied key.
+    _write_identity_state(state)
+    for key, values in state["app"].items():
+        _set_git_values(key, values)
+    print(f"github-app-auth: configured HTTPS Git credentials and identity {name}")
+
+
+def _restore_git() -> None:
+    state = _read_identity_state()
+    if state is None:
+        return
+    for key, applied in state["app"].items():
+        # Preserve changes made by the operator after installation.
+        if _git_values(key) == applied:
+            _set_git_values(key, state["previous"][key])
+    IDENTITY_STATE_PATH.unlink()
+    print("github-app-auth: restored unchanged App-managed Git settings")
+
+
+def _diagnose(*, force_refresh: bool = True) -> None:
+    policy = _load_policy()
+    record = _token_record(force_refresh=force_refresh)
+    returned_repositories: list[dict[str, Any]] = []
+    repository_count: int | None = None
+    page = 1
+    while repository_count is None or len(returned_repositories) < repository_count:
+        try:
+            response = requests.get(
+                f"{GITHUB_API}/installation/repositories",
+                headers=_headers(record["token"]),
+                params={"per_page": 100, "page": page},
+                timeout=(5, 20),
+                allow_redirects=False,
+            )
+        except requests.RequestException as exc:
+            raise AuthError(
+                f"GitHub diagnostic request failed: {type(exc).__name__}"
+            ) from exc
+        if response.status_code != 200:
+            raise _safe_github_error(response, "diagnostic request")
+        try:
+            payload = response.json()
+            current_count = int(payload["total_count"])
+            current_repositories = payload["repositories"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise AuthError("GitHub diagnostic returned invalid repository data") from exc
+        if not isinstance(current_repositories, list):
+            raise AuthError("GitHub diagnostic returned invalid repositories")
+        if current_count != len(policy["repository_ids"]):
+            raise AuthError("GitHub token repository scope differs from configured policy")
+        if repository_count is not None and repository_count != current_count:
+            raise AuthError("GitHub diagnostic repository count changed during paging")
+        repository_count = current_count
+        returned_repositories.extend(current_repositories)
+        if not current_repositories:
+            break
+        page += 1
+
+    try:
+        returned_ids = {int(repo["id"]) for repo in returned_repositories}
+        returned_names = {str(repo["full_name"]) for repo in returned_repositories}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AuthError("GitHub diagnostic returned incomplete repository data") from exc
+    if (
+        repository_count != len(policy["repository_ids"])
+        or returned_ids != set(policy["repository_ids"])
+        or returned_names != set(policy["repositories"])
+        or {int(repo["id"]): str(repo["full_name"]) for repo in returned_repositories}
+           != dict(zip(policy["repository_ids"], policy["repositories"]))
+    ):
+        raise AuthError("GitHub token repository scope differs from configured policy")
+    print(
+        json.dumps(
+            {
+                "authentication": "ok",
+                "repositories": policy["repositories"],
+                "repository_count": repository_count,
+                "permissions": record["permissions"],
+                "expires_at": record["expires_at"],
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def main() -> None:
+    # Forward `gh` arguments verbatim before argparse sees them. Otherwise
+    # top-level gh flags such as `--version` are mistaken for helper options.
+    if sys.argv[1:2] == ["gh"]:
+        try:
+            _run_gh(sys.argv[2:])
+        except AuthError as exc:
+            _fail(str(exc))
+        return
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("gh", help="run the real gh with a fresh token")
+    credential_parser = subparsers.add_parser(
+        "credential", help="serve the Git credential-helper protocol"
+    )
+    credential_parser.add_argument("action", choices=["get", "store", "erase", "capability"])
+    subparsers.add_parser("configure-git", help="install the App Git helper and identity")
+    subparsers.add_parser("restore-git", help="restore previous Git settings unless manually changed")
+    subparsers.add_parser("diagnose", help="verify App auth without printing a token")
+    subparsers.add_parser("clear-cache", help="delete the ephemeral installation token")
+    args = parser.parse_args()
+
+    try:
+        if args.command == "credential":
+            _credential(args.action)
+        elif args.command == "configure-git":
+            _configure_git()
+        elif args.command == "restore-git":
+            _restore_git()
+        elif args.command == "diagnose":
+            _diagnose()
+        elif args.command == "clear-cache":
+            _clear_cache()
+    except AuthError as exc:
+        _fail(str(exc))
+    except (OSError, subprocess.CalledProcessError):
+        _fail("local Git configuration operation failed")
+
+
+if __name__ == "__main__":
+    main()

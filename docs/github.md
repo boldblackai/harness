@@ -5,10 +5,12 @@ icon: material/github
 # GitHub authentication (`gh` CLI)
 
 Harness containers ship with the [GitHub CLI](https://cli.github.com/) (`gh`). To
-use it — `gh pr`, `gh issue`, HTTPS pushes, etc. — you authenticate **once**.
+use it — `gh pr`, `gh issue`, HTTPS pushes, etc. — choose a credential appropriate to your deployment.
 Because harness persists `~/.config` (see [Persistence](persistence.md)), the
-resulting session lives at `~/.config/gh/hosts.yml` and survives container
-restarts, so the token does **not** need to live in any long-lived secret.
+PAT credentials stored by `gh` can live at `~/.config/gh/hosts.yml` and survive container
+restarts. Treat that persisted file as a secret.
+
+For an AWS-hosted Hermes gateway, the optional [GitHub App authentication example](github-app.md) supplies short-lived, scoped installation tokens through a helper instead of persisting them in `gh` configuration.
 
 This page covers creating a Personal Access Token (PAT) and running the one-time
 login. For the per-platform command to reach a running container, see the deploy
@@ -30,7 +32,7 @@ guides: [fly.io](deploying/fly.md), [Kubernetes](deploying/k8s.md),
 4. Copy the token — you won't see it again.
 
 > Treat the PAT like a password. The recipes below use it once to log `gh` in,
-> then discard it; what persists is `gh`'s session, not your PAT.
+> then remove your temporary copy. The credential stored by `gh` remains sensitive.
 
 ## 2. Authenticate inside the running container
 
