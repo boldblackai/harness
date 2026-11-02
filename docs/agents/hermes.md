@@ -34,4 +34,4 @@ Hermes can be deployed as a long-running persistent agent ("claw") reachable ove
 
 - [fly.io](../deploying/fly.md)
 - [Kubernetes](../deploying/k8s.md)
-- [AWS (ECS Fargate or EC2 + SSM)](../deploying/aws.md)
+- [AWS (EC2/EBS, EKS, and Fargate storage limitations)](../deploying/aws.md)

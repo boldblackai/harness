@@ -337,7 +337,7 @@ You can run `hermes` as a long-running "claw" — a persistent agent process rea
 
 - [fly.io](docs/deploying/fly.md)
 - [Kubernetes](docs/deploying/k8s.md)
-- [AWS (ECS Fargate or EC2 + SSM)](docs/deploying/aws.md)
+- [AWS (EC2/EBS, EKS, and Fargate storage limitations)](docs/deploying/aws.md)
 
 ## Developing
 
