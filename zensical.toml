@@ -23,6 +23,7 @@ nav = [
     { "AWS" = "deploying/aws.md" },
   ] },
   { "GitHub auth" = "github.md" },
+  { "GitHub App auth" = "github-app.md" },
   { "Configuration" = "configuration.md" },
   { "Security" = "security.md" },
   { "Persistence" = "persistence.md" },

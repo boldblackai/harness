@@ -92,6 +92,8 @@ Custom composite action: `.github/actions/attest-provenance` for SLSA provenance
 
 ## Tests
 
+`examples/github-app-auth/` is an optional AWS SSM-backed GitHub App helper for Hermes gateways; it does not alter the image or default PAT path. See `docs/github-app.md` and its RFC. Run its tests with `uv run --with-requirements examples/github-app-auth/requirements-test.txt python -m unittest discover -s examples/github-app-auth/tests -v`. They simulate AWS/GitHub and use temporary Git config files. `.github/workflows/github-app-auth.yml` runs these tests on example changes. Keep helper dependencies aligned with the shipped Hermes version.
+
 E2E tests in `tests/e2e/*.test.mjs` (with shared helpers in `helpers.mjs`) use a docker shim (a fake `docker` binary that prints `DOCKER_INVOKED <args>`) to exercise the full CLI without requiring Docker. Files run in lexicographic order: `adapters → mounts → parsing → persistence → runtime`. Tests cover:
 
 - Argument parsing and validation (`--help`, unknown agent, missing files)
