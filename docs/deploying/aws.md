@@ -4,15 +4,15 @@
 
 This guide walks you through deploying [hermes-agent](https://hermes-agent.nousresearch.com/) as a long-running "claw" (a persistent agent process) on AWS using the upstream harness image.
 
-Two paths are documented:
+Choose a deployment based on how its database storage survives replacement:
 
 | Option | When to pick it |
 |---|---|
-| **A. ECS on Fargate** (recommended) | Production-ish use. Managed compute, persistent state on EFS, secrets from Secrets Manager, shell-in via `aws ecs execute-command` (SSM Session Manager under the hood). Closest 1:1 mapping to the [fly.io](fly.md) and [Kubernetes](k8s.md) deployments. |
-| **B. EC2 + Docker + SSM** | Single-VM hobbyist deployment. ~$13/mo on a `t4g.small`, EBS for persistence, SSM Session Manager replaces SSH (no keys, no inbound 22). Simplest possible AWS path. |
-| **C. EKS** | Already running EKS? The [Kubernetes guide](k8s.md) works on EKS unmodified — see [§ EKS](#c-eks) below for the one AWS-specific note. |
+| **A. ECS on Fargate** | Storage limitations only. The former EFS recipe is unsuitable for SQLite WAL; task-managed EBS is not retained across service task replacement. |
+| **B. EC2 + Docker + SSM** (recommended starting point) | Local filesystem on EBS, outbound-only networking, and Session Manager access. The example uses the root disk; use a separately retained data volume for instance replacement. |
+| **C. EKS** | Use the [Kubernetes guide](k8s.md) with an EBS-backed PVC and the [AWS-specific storage and rollout settings](#c-eks). |
 
-As with the other deploy targets, **use the upstream signed image as-is**. Do not build a derived image — see [the fly.io guide's "Customizing the claw" section](fly.md#customizing-the-claw-dont-extend-the-image) for the rationale. AWS-equivalent injection points for both options are covered below.
+As with the other deploy targets, **use the upstream signed image as-is**. Do not build a derived image — see [the fly.io guide's "Customizing the claw" section](fly.md#customizing-the-claw-dont-extend-the-image) for the rationale. The EC2 example below uses host bind-mounts for customization.
 
 ## Prerequisites
 
@@ -33,24 +33,54 @@ export HARNESS_IMAGE=ghcr.io/boldblackai/harness:hermes-1.12.0
 
 ## A. ECS on Fargate
 
-### Fargate architecture
+The previous Fargate recipe mounted EFS at `/home/harness/.hermes`. **Do not use that layout for Hermes's active SQLite databases.** EFS is an NFS network filesystem; SQLite's WAL mode requires a local filesystem. A single task or EFS access point does not remove that constraint. See [SQLite's WAL requirements](https://sqlite.org/wal.html) and [Amazon EFS's NFS interface](https://docs.aws.amazon.com/efs/latest/ug/whatisefs.html).
+
+Hermes stores session state in `$HERMES_HOME/state.db` and uses WAL by default. Its [journal-mode handling](https://github.com/NousResearch/hermes-agent/blob/v0.22.2/hermes_state_wal.py) includes fallbacks for some filesystem errors, but those are not a reason to recommend EFS as the default database storage.
+
+Fargate **does support EBS** on Linux platform version 1.4.0 and later. However, ECS creates a new task-managed volume for each task, cannot directly attach an existing volume through that mechanism, and always deletes service-managed volumes when their tasks terminate. Restoring a snapshot creates a new volume; it does not automatically preserve the latest state between service tasks. See [ECS EBS volume support and lifecycle constraints](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-volumes.html).
+
+For a persistent claw, use [EC2 with EBS](#b-ec2-with-docker-and-ssm) or [EKS with an EBS-backed PVC](#c-eks). Fargate needs a separately designed and tested backup/restore lifecycle before it can replace those options; this guide does not provide that recipe.
+
+### Migrating an existing EFS deployment
+
+1. Stop the gateway and every other process accessing its databases, including scheduled jobs. Prevent the old service from restarting during the migration.
+2. Back up the complete `HERMES_HOME` while it is offline, preserving any remaining `-wal` and `-shm` files alongside their databases. Copying only a live `.db` file can omit committed data in its WAL. Preserve `.config` and mise data/state as well.
+3. Restore onto a local filesystem on EBS, with the mounted directories writable by `harness` (`uid:gid=1000:1000`).
+4. Start one gateway against the restored state. Verify existing sessions and configuration before retiring the original storage, and keep the backup for recovery.
+
+---
+
+## B. EC2 with Docker and SSM
+
+The simplest possible AWS deployment: one VM, Docker, an EBS volume for state, and SSM Session Manager for shell access. No SSH keys, no inbound 22, no load balancer.
+
+**The commands below are a single-instance starter, not a retained-volume deployment.** Its root EBS volume survives container restarts and instance stop/start, but `DeleteOnTermination=true` deletes all four state directories when the instance is terminated. Use the retained-data-volume design below when state must survive instance replacement.
+
+### EC2 architecture
 
 | Component | Resource |
 |---|---|
-| **Compute** | Fargate task (1 vCPU / 2 GiB), single-replica service |
-| **Storage** | EFS file system with 4 access points — one per persisted path (`.hermes`, `.config`, mise data/state), mirroring what the `harness` CLI bind-mounts |
-| **Secrets** | AWS Secrets Manager → injected as env vars via task definition `secrets[]` |
-| **Logs** | CloudWatch Logs (`/ecs/${CLAW_NAME}`) |
-| **Shell-in** | `aws ecs execute-command` (uses SSM Session Manager) |
-| **Network** | Default VPC, public subnet, `assignPublicIp: ENABLED` (outbound-only; no load balancer) |
+| **Compute** | EC2 `t4g.small` (ARM64, 2 vCPU / 2 GiB) running Amazon Linux 2023 |
+| **Storage** | 30 GiB gp3 root EBS; four bind-mount dirs for claw state (`.hermes`, `.config`, mise data/state) live on it |
+| **Secrets** | AWS Secrets Manager → fetched at boot, written to a Docker `--env-file` |
+| **Shell-in** | `aws ssm start-session --target i-xxx` |
+| **Network** | Default VPC, public IP, **no inbound rules** — outbound only |
 
-### 1. Create the CloudWatch log group
+### Retaining state across instance replacement
 
-```bash
-aws logs create-log-group --region "$AWS_REGION" --log-group-name "/ecs/${CLAW_NAME}"
-```
+For a long-lived deployment, place all four persisted paths on a separate gp3 data volume and manage its lifecycle independently of the root disk:
 
-### 2. Store secrets in Secrets Manager
+- Retain the volume on instance termination (`DeleteOnTermination=false`); if using CloudFormation, retain it on stack deletion/replacement as well (`DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`).
+- Keep the volume and replacement instance in the [same Availability Zone](https://docs.aws.amazon.com/ebs/latest/userguide/ebs-attaching-volume.html). Automate reattachment of that existing volume, not creation of a blank replacement.
+- Mount the existing filesystem before starting the gateway, and fail startup if the mount is absent. Never format an existing data volume during bootstrap or let Docker silently create state directories on the root disk instead.
+- Give the four bind-mount directories ownership `1000:1000`. Keep one gateway active; stop the old instance's workload before starting its replacement.
+- Keep independent backups and test restoration. Volume retention alone is not a backup.
+
+The same layout works with **ECS on EC2** using host bind-mounts backed by the retained data volume. Complete the attachment and mount before the host accepts tasks, and configure single-replica, stop-old-before-start-new deployments. This is distinct from ECS-managed task EBS volumes, whose service-task lifecycle is described above.
+
+These retention and attachment steps require deployment automation beyond the starter commands below.
+
+### 1. Store secrets in Secrets Manager
 
 _Prefix each shell command with a single space so the secret value doesn't end up in your shell history._
 
@@ -69,283 +99,6 @@ Then update each one with the real value:
    --secret-id "${CLAW_NAME}/OPENROUTER_API_KEY" --secret-string "your-openrouter-key"
 # repeat for TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS
 ```
-
-> SSM Parameter Store (`SecureString`) works too if you prefer it over Secrets Manager — just swap `secretsmanager:GetSecretValue` for `ssm:GetParameters` in the execution-role policy and reference the parameter ARN in the task definition.
-
-### 3. Create EFS for persistent state
-
-Hermes stores sessions, memories, skills, the HuggingFace model cache (faster-whisper STT, kokoro-onnx TTS), and `config.yaml` under `/home/harness/.hermes`. EFS is the right primitive: it survives task restarts, supports the `uid:gid=1000:1000` non-root `harness` user, and works across AZs.
-
-```bash
-EFS_ID=$(aws efs create-file-system --region "$AWS_REGION" \
-  --performance-mode generalPurpose --throughput-mode bursting \
-  --tags Key=Name,Value="${CLAW_NAME}-data" \
-  --query 'FileSystemId' --output text)
-
-# Create an access point that maps everything to uid/gid 1000 (the harness user)
-# One EFS, one access point per persisted path. Mirrors what the `harness`
-# CLI bind-mounts so hermes config/sessions, XDG config, and mise tools &
-# trust settings all survive task restarts. Every access point shares $EFS_ID
-# and maps to uid/gid 1000 (the non-root harness user).
-create_ap() {
-  aws efs create-access-point --region "$AWS_REGION" \
-    --file-system-id "$EFS_ID" \
-    --posix-user Uid=1000,Gid=1000 \
-    --root-directory "{\"Path\":\"$1\",\"CreationInfo\":{\"OwnerUid\":1000,\"OwnerGid\":1000,\"Permissions\":\"0755\"}}" \
-    --query 'AccessPointId' --output text
-}
-HERMES_AP=$(create_ap /hermes-openrouter)
-CONFIG_AP=$(create_ap /xdg-config)
-MISE_DATA_AP=$(create_ap /mise-data)
-MISE_STATE_AP=$(create_ap /mise-state)
-
-echo "EFS_ID=$EFS_ID  HERMES_AP=$HERMES_AP  CONFIG_AP=$CONFIG_AP  MISE_DATA_AP=$MISE_DATA_AP  MISE_STATE_AP=$MISE_STATE_AP"
-```
-
-Create a mount target in each subnet your task can run in, and a security group that allows NFS (TCP 2049) from your task's security group. The minimal setup (default VPC, one subnet, one SG used by both EFS and the task):
-
-```bash
-VPC_ID=$(aws ec2 describe-vpcs --region "$AWS_REGION" \
-  --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
-# Pick a subnet in an AZ that supports ARM64 Fargate. In us-east-1 specifically,
-# us-east-1e and us-east-1f do NOT support ARM64 Fargate — picking Subnets[0]
-# blindly will fail intermittently with "The required capabilities cannot be
-# supported on requested platform". The filter below restricts to AZs a/b/c/d.
-# If you set `cpuArchitecture: X86_64` in the task definition, this caveat
-# doesn't apply and you can drop the filter.
-SUBNET_ID=$(aws ec2 describe-subnets --region "$AWS_REGION" \
-  --filters Name=vpc-id,Values="$VPC_ID" Name=default-for-az,Values=true \
-  --query "Subnets[?ends_with(AvailabilityZone, \`a\`) || ends_with(AvailabilityZone, \`b\`) || ends_with(AvailabilityZone, \`c\`) || ends_with(AvailabilityZone, \`d\`)] | [0].SubnetId" \
-  --output text)
-
-SG_ID=$(aws ec2 create-security-group --region "$AWS_REGION" \
-  --group-name "${CLAW_NAME}-sg" --description "${CLAW_NAME}" --vpc-id "$VPC_ID" \
-  --query 'GroupId' --output text)
-aws ec2 authorize-security-group-ingress --region "$AWS_REGION" \
-  --group-id "$SG_ID" --protocol tcp --port 2049 --source-group "$SG_ID"
-
-aws efs create-mount-target --region "$AWS_REGION" \
-  --file-system-id "$EFS_ID" --subnet-id "$SUBNET_ID" --security-groups "$SG_ID"
-```
-
-### 4. Create IAM roles
-
-Two roles are needed:
-
-- **Task execution role** — used by the ECS agent to pull the image, read secrets, and write logs.
-- **Task role** — used by the container itself; needs SSM Messages permissions so `aws ecs execute-command` works.
-
-```bash
-# Trust policy reused by both roles
-cat > /tmp/ecs-trust.json <<'EOF'
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
-  "Principal":{"Service":"ecs-tasks.amazonaws.com"},
-  "Action":"sts:AssumeRole"}]}
-EOF
-
-# Execution role
-aws iam create-role --role-name "${CLAW_NAME}-exec" \
-  --assume-role-policy-document file:///tmp/ecs-trust.json
-aws iam attach-role-policy --role-name "${CLAW_NAME}-exec" \
-  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-cat > /tmp/exec-secrets.json <<EOF
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
-  "Action":["secretsmanager:GetSecretValue"],
-  "Resource":"arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${CLAW_NAME}/*"}]}
-EOF
-aws iam put-role-policy --role-name "${CLAW_NAME}-exec" \
-  --policy-name read-secrets --policy-document file:///tmp/exec-secrets.json
-
-# Task role (for ECS Exec / SSM Session Manager)
-aws iam create-role --role-name "${CLAW_NAME}-task" \
-  --assume-role-policy-document file:///tmp/ecs-trust.json
-cat > /tmp/task-ssm.json <<'EOF'
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
-  "Action":["ssmmessages:CreateControlChannel","ssmmessages:CreateDataChannel",
-            "ssmmessages:OpenControlChannel","ssmmessages:OpenDataChannel"],
-  "Resource":"*"}]}
-EOF
-aws iam put-role-policy --role-name "${CLAW_NAME}-task" \
-  --policy-name ecs-exec --policy-document file:///tmp/task-ssm.json
-```
-
-### 5. Register the task definition
-
-Save this as `taskdef.json` (substitute `<ACCOUNT_ID>`, `<AWS_REGION>`, `<EFS_ID>`, and the four access-point IDs `<HERMES_AP>` / `<CONFIG_AP>` / `<MISE_DATA_AP>` / `<MISE_STATE_AP>` from step 3):
-
-```json
-{
-  "family": "hermes-claw",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "1024",
-  "memory": "2048",
-  "runtimePlatform": { "operatingSystemFamily": "LINUX", "cpuArchitecture": "ARM64" },
-  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/hermes-claw-exec",
-  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/hermes-claw-task",
-  "containerDefinitions": [{
-    "name": "hermes",
-    "image": "ghcr.io/boldblackai/harness:hermes-1.12.0",
-    "essential": true,
-    "command": ["hermes", "gateway"],
-    "user": "1000:1000",
-    "linuxParameters": { "initProcessEnabled": true },
-    "environment": [
-      { "name": "TZ", "value": "America/New_York" },
-      { "name": "HARNESS_CLOUD_MODE", "value": "1" },
-      { "name": "HERMES_HOME", "value": "/home/harness/.hermes" },
-      { "name": "HF_HOME", "value": "/home/harness/.hermes/.cache/huggingface" }
-    ],
-    "secrets": [
-      { "name": "OPENROUTER_API_KEY",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/OPENROUTER_API_KEY" },
-      { "name": "TELEGRAM_BOT_TOKEN",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/TELEGRAM_BOT_TOKEN" },
-      { "name": "TELEGRAM_ALLOWED_USERS","valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:hermes-claw/TELEGRAM_ALLOWED_USERS" }
-    ],
-    "mountPoints": [
-      { "sourceVolume": "hermes-data",       "containerPath": "/home/harness/.hermes",           "readOnly": false },
-      { "sourceVolume": "hermes-config",     "containerPath": "/home/harness/.config",           "readOnly": false },
-      { "sourceVolume": "hermes-mise-data",  "containerPath": "/home/harness/.local/share/mise", "readOnly": false },
-      { "sourceVolume": "hermes-mise-state", "containerPath": "/home/harness/.local/state/mise", "readOnly": false }
-    ],
-    "logConfiguration": {
-      "logDriver": "awslogs",
-      "options": {
-        "awslogs-group": "/ecs/hermes-claw",
-        "awslogs-region": "<AWS_REGION>",
-        "awslogs-stream-prefix": "hermes"
-      }
-    }
-  }],
-  "volumes": [
-    { "name": "hermes-data",       "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<HERMES_AP>",     "iam": "DISABLED" } } },
-    { "name": "hermes-config",     "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<CONFIG_AP>",     "iam": "DISABLED" } } },
-    { "name": "hermes-mise-data",  "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<MISE_DATA_AP>",  "iam": "DISABLED" } } },
-    { "name": "hermes-mise-state", "efsVolumeConfiguration": { "fileSystemId": "<EFS_ID>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<MISE_STATE_AP>", "iam": "DISABLED" } } }
-  ]
-}
-```
-
-> The image is published for both `linux/amd64` and `linux/arm64`. ARM64 Fargate is ~20% cheaper — leave `cpuArchitecture` as `ARM64` unless you have a reason not to. (In `us-east-1`, only AZs `a`/`b`/`c`/`d` support ARM64 Fargate; the subnet picker above filters accordingly.)
-
-Register it:
-
-```bash
-aws ecs register-task-definition --region "$AWS_REGION" \
-  --cli-input-json file://taskdef.json
-```
-
-### 6. Create the cluster and service
-
-```bash
-aws ecs create-cluster --region "$AWS_REGION" --cluster-name "${CLAW_NAME}"
-
-aws ecs create-service --region "$AWS_REGION" \
-  --cluster "${CLAW_NAME}" \
-  --service-name "${CLAW_NAME}" \
-  --task-definition hermes-claw \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --enable-execute-command \
-  --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_ID}],securityGroups=[${SG_ID}],assignPublicIp=ENABLED}"
-```
-
-`--enable-execute-command` is the toggle that makes `aws ecs execute-command` work below — it cannot be enabled retroactively on a running service without an update + new deployment.
-
-> **First-task timing.** Initial task placement typically takes 2–3 minutes — most of that is the ~500 MB image pull from `ghcr.io`. If you see a transient `CannotPullContainerError` in the service events (`describe-services --query 'services[0].events'`), don't panic: ECS automatically stops the failed task and starts a fresh one. Persistent failures usually mean a real problem (subnet/SG/IAM/image-not-found).
-
-### Fargate monitoring
-
-```bash
-# List running tasks
-aws ecs list-tasks --region "$AWS_REGION" --cluster "${CLAW_NAME}"
-
-# Tail logs
-aws logs tail --region "$AWS_REGION" "/ecs/${CLAW_NAME}" --follow
-
-# Shell into the container (uses SSM Session Manager)
-TASK_ARN=$(aws ecs list-tasks --region "$AWS_REGION" --cluster "${CLAW_NAME}" \
-  --query 'taskArns[0]' --output text)
-aws ecs execute-command --region "$AWS_REGION" \
-  --cluster "${CLAW_NAME}" --task "$TASK_ARN" \
-  --container hermes --interactive --command "/bin/bash"
-```
-
-> **Exec sessions run as root.** `aws ecs execute-command` opens a **root** shell inside the container by default, even though the workload (PID 1) runs as the `harness` user (uid 1000). If you need to verify or debug behavior as the harness user (e.g. confirming a mount is writable from the workload's perspective, not just root's), prefix the command with `runuser -u harness --`. To verify the workload's actual user from outside, use `stat -c %u /proc/1` — checking `id -u` inside the exec session will report root.
-
-### Fargate GitHub authentication
-
-To use `gh` (or HTTPS git) from inside the claw, authenticate once — the session persists in `~/.config` (on EFS), so it survives task restarts. See [GitHub authentication](../github.md) for creating a PAT.
-
-Exec sessions run as **root** (see the note above) while the claw's state is owned by the `harness` user, so run the login through `runuser`:
-
-```bash
-TASK_ARN=$(aws ecs list-tasks --region "$AWS_REGION" --cluster "${CLAW_NAME}" \
-  --query 'taskArns[0]' --output text)
-aws ecs execute-command --region "$AWS_REGION" \
-  --cluster "${CLAW_NAME}" --task "$TASK_ARN" \
-  --container hermes --interactive --command "/bin/bash"
-# inside the root shell, authenticate as the harness user:
-runuser -u harness -- sh -c 'echo "<your-github-pat>" | gh auth login --with-token'
-runuser -u harness -- gh auth status
-exit
-```
-
-### Fargate customization (no derived image)
-
-The fly.io guide's [`[[files]]` injection pattern](fly.md#customizing-the-claw-dont-extend-the-image) translates to two AWS techniques:
-
-- **Runtime-mutable files (config, persona, persistent skills)** — seed them once on the EFS volume, then let hermes own them. `aws ecs execute-command` into a running task and `cp` files directly into the volume path (e.g. `~/.hermes/`). The entrypoint only seeds a minimal `config.yaml` from a baked-in template on first run in local mode; there is no bulk `cp -rn` seed mechanism, so all other customizations must be placed into the volume manually.
-- **Tool wrappers / scripts (refreshed every deploy)** — bake them into a tiny sidecar layer published to ECR `FROM scratch`, mount it via a shared `bind` volume between an `initContainer`-style sidecar (using `dependsOn: { condition: COMPLETE }`) and the hermes container. Or: store them in S3 and `aws s3 sync` them in via a startup hook. Avoid `FROM ghcr.io/boldblackai/harness` — see the fly doc for why.
-
-### Fargate teardown
-
-```bash
-aws ecs update-service --region "$AWS_REGION" --cluster "${CLAW_NAME}" \
-  --service "${CLAW_NAME}" --desired-count 0
-aws ecs delete-service --region "$AWS_REGION" --cluster "${CLAW_NAME}" \
-  --service "${CLAW_NAME}" --force
-aws ecs delete-cluster --region "$AWS_REGION" --cluster "${CLAW_NAME}"
-aws efs delete-mount-target --mount-target-id <MT_ID>   # from describe-mount-targets
-aws efs delete-access-point --access-point-id "$HERMES_AP"
-aws efs delete-access-point --access-point-id "$CONFIG_AP"
-aws efs delete-access-point --access-point-id "$MISE_DATA_AP"
-aws efs delete-access-point --access-point-id "$MISE_STATE_AP"
-aws efs delete-file-system --file-system-id "$EFS_ID"
-aws ec2 delete-security-group --group-id "$SG_ID"
-aws logs delete-log-group --region "$AWS_REGION" --log-group-name "/ecs/${CLAW_NAME}"
-for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS; do
-  aws secretsmanager delete-secret --region "$AWS_REGION" \
-    --secret-id "${CLAW_NAME}/${k}" --force-delete-without-recovery
-done
-aws iam delete-role-policy --role-name "${CLAW_NAME}-exec" --policy-name read-secrets
-aws iam detach-role-policy --role-name "${CLAW_NAME}-exec" \
-  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-aws iam delete-role --role-name "${CLAW_NAME}-exec"
-aws iam delete-role-policy --role-name "${CLAW_NAME}-task" --policy-name ecs-exec
-aws iam delete-role --role-name "${CLAW_NAME}-task"
-```
-
----
-
-## B. EC2 + Docker + SSM
-
-The simplest possible AWS deployment: one VM, Docker, an EBS volume for state, and SSM Session Manager for shell access. No SSH keys, no inbound 22, no load balancer. Roughly $13/mo on a `t4g.small`.
-
-### EC2 architecture
-
-| Component | Resource |
-|---|---|
-| **Compute** | EC2 `t4g.small` (ARM64, 2 vCPU / 2 GiB) running Amazon Linux 2023 |
-| **Storage** | 30 GiB gp3 root EBS; four bind-mount dirs for claw state (`.hermes`, `.config`, mise data/state) live on it |
-| **Secrets** | AWS Secrets Manager → fetched at boot, written to a Docker `--env-file` |
-| **Shell-in** | `aws ssm start-session --target i-xxx` |
-| **Network** | Default VPC, public IP, **no inbound rules** — outbound only |
-
-### 1. Store secrets in Secrets Manager
-
-Identical to [Option A § 2](#2-store-secrets-in-secrets-manager).
 
 ### 2. Create the IAM instance profile
 
@@ -501,6 +254,8 @@ To pin a newer harness image, edit the systemd unit (`/etc/systemd/system/hermes
 
 ### EC2 teardown
 
+**This deletes the starter instance's root volume and its agent state.** Back up any state you need before terminating it. If you implemented a separate retained data volume, it remains billable until explicitly deleted.
+
 ```bash
 aws ec2 terminate-instances --region "$AWS_REGION" --instance-ids "$INSTANCE_ID"
 aws ec2 wait instance-terminated --region "$AWS_REGION" --instance-ids "$INSTANCE_ID"
@@ -512,18 +267,25 @@ aws iam delete-role-policy --role-name "${CLAW_NAME}-ec2" --policy-name read-sec
 aws iam detach-role-policy --role-name "${CLAW_NAME}-ec2" \
   --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 aws iam delete-role --role-name "${CLAW_NAME}-ec2"
-# Plus the Secrets Manager cleanup loop from Option A's teardown.
+# Schedule secret deletion only when retiring this claw permanently.
+for k in OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS; do
+  aws secretsmanager delete-secret --region "$AWS_REGION" \
+    --secret-id "${CLAW_NAME}/${k}" --recovery-window-in-days 7
+done
 ```
 
 ---
 
 ## C. EKS
 
-The [Kubernetes manifest](k8s.md#all-in-one-k8sclawyaml) deploys on EKS unmodified. One AWS-specific note:
+Start from the [Kubernetes manifest](k8s.md#all-in-one-k8sclawyaml), with these AWS-specific settings:
 
-- The PVC's `accessModes: [ReadWriteOnce]` works with the [EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html), which most EKS clusters ship with as the default `StorageClass` (`gp2` or `gp3`). If you need `ReadWriteMany` (e.g. for a future multi-replica setup), switch to the [EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html) and a `ReadWriteMany` `StorageClass`.
+- Install/configure the [EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) and explicitly select an EBS-backed `StorageClass` for the PVC. Keep `accessModes: [ReadWriteOnce]`. Do not assume the cluster's default class uses EBS.
+- Keep `replicas: 1` and set the Deployment's `spec.strategy.type: Recreate` so an update stops the old gateway before starting the new one. `ReadWriteOnce` alone does not prevent two pods on the same node from accessing the volume.
+- Use a `Retain` reclaim policy if storage must survive PVC deletion, and maintain backups. Check the bound PV's actual policy before deleting a claim.
+- Do not switch the database volume to EFS/`ReadWriteMany` for multiple replicas. Network storage does not satisfy SQLite WAL's requirements, and sharing a gateway's state across replicas needs a separate application design.
 
-Everything else — Secrets, Deployment, PDB, `kubectl exec` for shell-in — is portable from any K8s cluster.
+Secrets and `kubectl exec` remain as described in the Kubernetes guide.
 
 ## Why not Elastic Beanstalk, Amplify, App Runner, Lambda?
 

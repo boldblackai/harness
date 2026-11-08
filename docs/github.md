@@ -53,7 +53,6 @@ the persisted `~/.config` volume, it all survives restarts and deploys.
 |---|---|
 | **fly.io** | `fly ssh console --app <app>` — see the [fly.io guide](deploying/fly.md) |
 | **Kubernetes** | `kubectl exec ... -- gh auth login --with-token` — see the [k8s guide](deploying/k8s.md) |
-| **AWS (Fargate)** | `aws ecs execute-command ...` — see the [AWS guide](deploying/aws.md) |
 | **AWS (EC2)** | `aws ssm start-session ...` → `docker exec ...` — see the [AWS guide](deploying/aws.md) |
 
 ## Rotating or revoking
