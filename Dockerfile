@@ -1,8 +1,8 @@
-FROM debian:stable-slim@sha256:13e0a2e78aa0554ad5ff66e4e260c6dbcdff807eb1f39d43b9fb0288aae88b04
+FROM debian:stable-slim@sha256:fbfb4059d2127120aa05b6e6064523d2102552f0cf0026ddf0701c12f1f8f3e0
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG GH_VERSION="2.103.2"
+ARG GH_VERSION="2.103.3"
 ARG TARGETARCH
 
 # hadolint ignore=DL3008
@@ -54,7 +54,7 @@ ENV PATH=$PNPM_HOME/bin:$PNPM_HOME:$PATH
 RUN set -eux; \
     corepack enable; \
     attempt=1; \
-    until corepack prepare pnpm@12.15.0 --activate; do \
+    until corepack prepare pnpm@12.17.0 --activate; do \
         if [ "$attempt" -ge 5 ]; then echo "corepack prepare failed after $attempt attempts" >&2; exit 1; fi; \
         echo "corepack prepare attempt $attempt failed; retrying in 15s"; \
         attempt=$((attempt+1)); sleep 15; \
@@ -73,10 +73,10 @@ RUN set -eux; \
 COPY pi/models.json /etc/harness/pi-defaults/models.json
 
 # Install mise (polyglot version manager)
-# Checksums from: https://github.com/jdx/mise/releases/download/v2026.10.19/SHASUMS256.txt
-ENV MISE_VERSION=2026.10.19
-ENV MISE_AMD64_SHA256=3162760f40b6b5f706c60641e4ef5ee7322bc6c54f72fc26a7111b337aa18d9d
-ENV MISE_ARM64_SHA256=4a4ca53b28e5433c527f4f73fac1f98f992a17cf32ca136a58e2e375f790f627
+# Checksums from: https://github.com/jdx/mise/releases/download/v2026.10.25/SHASUMS256.txt
+ENV MISE_VERSION=2026.10.25
+ENV MISE_AMD64_SHA256=5d362ecc578dc7c146679b841dda949d6472cbf86ff5635db7afdca1b6b3fd87
+ENV MISE_ARM64_SHA256=bb09e88b13164ca90691a5cc042726d079f0ba26ab55527344cb173c2e83c998
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     case "${ARCH}" in \
