@@ -339,6 +339,8 @@ You can run `hermes` as a long-running "claw" — a persistent agent process rea
 - [Kubernetes](docs/deploying/k8s.md)
 - [AWS (ECS Fargate or EC2 + SSM)](docs/deploying/aws.md)
 
+For long-running AWS Hermes gateways, an optional [GitHub App authentication example](docs/github-app.md) supplies scoped installation tokens to `gh` and HTTPS Git, with reversible configuration and an ephemeral token cache.
+
 ## Developing
 
 Link your local checkout globally:
