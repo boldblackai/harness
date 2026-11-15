@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.13.0] - 2026-11-15
+
+### Summary
+
+Dependency-refresh release centered on hermes-agent v0.22.2 → v0.23.1, the new upstream feature line. The hermes image now installs upstream's own `telegram` and `stt-whisper` extras instead of hand-maintained side pins (python-telegram-bot 22.6 → 22.8, faster-whisper 1.2.1 on the project's pins) and drops the kokoro-onnx local-TTS side pin entirely — upstream removed local TTS in v0.23, so add the `kittentts`/`piper` extras to the image's install line if a deployment needs it. Landing v0.23.x required two structural fixes in the image build: upstream pins Pillow 13 while browser-harness 0.1.13 still pins pillow 12.3.0 (a conflict `uv pip install` cannot resolve from upstream's pyproject overrides), so the one intersecting override is mirrored in the new `hermes-uv-overrides.txt` (upstream tracking: NousResearch/hermes-agent#143313); and the web UI is now built through the repo's pnpm-workspace scripts with PM-pinned pnpm, replacing the plain `npm install` build that v0.23's workspace layout broke. Also refreshes the weekly sweep pins (7-day cooldown). Note for claw upgrades: upstream v0.23 removed the old built-in `browser_*` tools (browser automation is `browser_exec` only) and `hermes mcp serve` became `hermes mcp-serve`.
+
+### Changed
+
+- hermes image: `telegram` and `stt-whisper` install as upstream extras instead of side pins — python-telegram-bot 22.6 → 22.8 (with `[webhooks]`, matching upstream), faster-whisper rides the project's pins; the kokoro-onnx side pin is dropped (upstream removed local TTS in v0.23) (#215)
+- hermes image: Pillow 13 resolution mirrored in `hermes-uv-overrides.txt` and passed via `--overrides` (upstream's `[tool.uv] override-dependencies` is honored by `uv lock`/`uv sync` but not the `uv pip install` this image uses); remove the file when browser-harness ships a release allowing Pillow 13 (#215)
+- hermes image: web UI built through the v0.23 pnpm workspace (`scripts/build/node-deps.mjs --workspace web` + `scripts/build/web.mjs`) with PM-pinned pnpm and node, replacing `npm install`/`npm run build`, which the workspace layout broke; the built dist is verified via `hermes_cli/web_dist/index.html` (#215)
+- README: dropped the stale kokoro-onnx local-TTS claim from the hermes-variant contents list
+
+### Dependency Updates
+
+- updated hermes-agent from v0.22.2 to v0.23.1
+- updated @earendil-works/pi-coding-agent from 1.3.0 to 1.5.0
+- updated opencode-ai from 1.19.3 to 1.19.5
+- updated pnpm from 12.14.0 to 12.18.0
+- updated mise from 2026.10.13 to 2026.11.4
+- updated gh from 2.102.0 to 2.103.3
+- updated cosign from 3.1.3 to 3.1.4
+- updated uv from 0.13.4 to 0.13.7
+- updated uv-managed CPython from 3.14.7 to 3.14.8
+- updated python-telegram-bot from 22.6 to 22.8 (side pin → upstream `telegram` extra)
+- updated the debian:stable-slim base digest (weekly rotation)
+
+### Upstream Release Notes
+
+#### @earendil-works/pi-coding-agent 1.3.0 → 1.5.0
+
+**1.4.0** — codemode classifiers accept images (TypeSafe's Jev, Cloudflare's Clef); compaction and branch summaries use the model's output limit instead of a fixed cap, so long reasoning no longer fails them; codemode scripts queue for a free worker instead of failing (`PI_CODEMODE_MAX_WORKERS`); Rex terminal support (OSC 8 hyperlinks, truecolor, inline images). Fixes include terminal modes restored after an abnormal exit, session recovery after output-limit truncation, and the `grep` tool ignoring `RIPGREP_CONFIG_PATH`.
+
+**1.5.0** — faster streaming (incremental parsing of large tool calls, reused highlighting and rendered Markdown); extension update changelogs; custom self-update commands (`PI_SELF_UPDATE_COMMAND`); GPT-6.1 Terra on OpenAI/Azure/Codex, and the default OpenAI model moves to `gpt-6.1-sol`. Breaking for extension tools: argument validation now runs on `@earendil-works/pi-schema`, so TypeBox-only features (`Type.Refine()`, codecs, custom formats) no longer apply to tool arguments. Security fixes include a glob-DoS fix and MCP OAuth rejecting non-HTTP(S) metadata URLs.
+
+#### opencode-ai 1.19.3 → 1.19.5
+
+**1.19.4** — bundled Bun runtime upgraded to 1.4.4, which includes security fixes for Brotli, TLS, HTTP/1.1, HTTP/2, HTTP/3, WebSocket and `fetch`, and updates root certificates to NSS 3.131.1.
+
+**1.19.5** — failed TUI worker requests now return an error instead of leaving the caller hanging.
+
+#### hermes-agent v0.22.2 → v0.23.1
+
+**v0.22.3** — stability rollup of ~620 PRs: MCP progress notifications streamed as live tool progress, a refreshed classic CLI layout, OAuth clients that plugins declare and Hermes signs in and refreshes, opt-in Telegram DM topic transfer, and session auto-prune back to opt-in.
+
+**v0.22.4** — Desktop stops showing suggestion pills above the composer; plugins that install nothing skip the dependency-consent step; the dashboard can safely re-pair WhatsApp after logging out.
+
+**v0.22.5** — rollup of ~81 PRs: Nous sign-in reworked (every sign-in is the plain device login), usage-window plan support, pluggable delegation backends, `hermes mcp serve` and the Singularity backend move out of core into plugins, the Electron 44 upgrade, Pillow 13 and a batch of dependency security bumps.
+
+**v0.22.6** — rollup of ~776 PRs: the Webapp served from the gateway's own listener (`hermes webapp`), `/model reset`, per-skill locks against autonomous writes, `hermes cron cancel` plus a per-job missed-run policy, opt-in OS-keychain storage for the vault key, Telegram video notes, and Slack emoji reactions in thread context.
+
+**v0.22.7** — rollup of ~174 PRs: opt-in lead routing for Desktop Group Chats, cron jobs that post into Group Chats, pinned Kanban boards as quick-switch tabs, and `$$TeX$$`/mermaid rendering through Pele.
+
+**v0.23.0** — the feature release: the Desktop workspace in a browser tab (Webapp, off by default); one gateway owns every conversation — CLI, TUI, Desktop, editors, messaging bots and cron all attach as clients of a single gateway per machine, ending messages written twice or going missing between surfaces; pictures drawn in the terminal (kitty, Ghostty, iTerm2, WezTerm, Konsole); `/rewind` to edit and resend or fork from an earlier message; every machine in one Desktop window; self-running Group Chats (a lead bot or automatic router picks who answers); plugin auto-update with holdbacks for breaking updates, the catalog grown to 1,050+ entries with a Verified tier; price tags and spend limits for paid MCP tools; Meshy, ElevenLabs Music/SFX, X Chat, REA and bubblewrap as new official plugins while camofox, mcp-serve, the agent importers and Singularity move out of core; pluggable delegation as the official `advanced-delegation` plugin; performance work (cron prompt-cache sharing, ~1,570 fewer prompt tokens per one-shot run, millisecond `patch`/`write_file` with LSP, gateways releasing closed sessions' memory); built-in skills consolidated 58 → 44 with `hermes curator lock`. **Upgrade notes:** the old built-in browser tools are gone — browser automation runs on `browser_exec` only, and prompts, skills or toolset lists naming the ten `browser_*` tools must switch; `hermes mcp serve` is now `hermes mcp-serve`; Desktop needs macOS 13+ and 64-bit Windows; GLM-5.3 is the default model when none was picked.
+
+**v0.23.1** — raises the plugin-catalog size cap from 2 MiB to 16 MiB: since the catalog site deploy on November 9 the published catalog exceeded the cap, so clients silently fell back to their shipped catalog and plugin installs resolved stale pins and missed new entries; plus a ~618-PR stability rollup.
+
+### Changes
+
+- ed3c4d6 deps: bump pi 1.3.0→1.4.0, opencode 1.19.3→1.19.4, pnpm 12.14.0→12.15.0, mise 2026.10.13→2026.10.19, hermes v0.22.2→v0.22.4, gh 2.102.0→2.103.2, cosign 3.1.3→3.1.4, uv 0.13.4→0.13.5, cpython 3.14.7→3.14.8, debian digest (7-day cooldown) (#210)
+- 47a7399 deps: bump pi 1.4.0->1.5.0, opencode 1.19.4->1.19.5, pnpm 12.15.0->12.18.0, mise 2026.10.19->2026.11.4, gh 2.103.2->2.103.3, uv 0.13.5->0.13.7, debian digest (7-day cooldown) (#215)
+
 ## [1.12.0] - 2026-10-29
 
 ### Summary
