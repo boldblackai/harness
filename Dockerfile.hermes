@@ -111,7 +111,16 @@ RUN apt-get update && \
     && uv python install --no-cache 3.14.8 \
     && git clone --depth 1 --branch v0.23.1 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python 3.14.8 \
-    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --overrides /tmp/hermes-uv-overrides.txt --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
+    # telegram + stt-whisper are upstream's own extras: python-telegram-bot
+    # 22.8 (with [webhooks], matching upstream's pin) and faster-whisper 1.2.1
+    # now ride the project's pins instead of hand-maintained side pins. The
+    # kokoro-onnx side pin is dropped entirely: upstream removed it in v0.23
+    # (local TTS moved to KittenTTS/Piper) and local TTS has been removed due
+    # to lack of demand. Lazy installs are disabled, so local TTS exists only
+    # when baked here:
+    # add kittentts/piper to the extras line if a deployment needs it (models
+    # and voices still download at first use).
+    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --overrides /tmp/hermes-uv-overrides.txt --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic,telegram,stt-whisper] \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer-package 'certifi=2999-01-01T00:00:00Z' "certifi==2026.10.19" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
     && cd /opt/hermes-agent \
