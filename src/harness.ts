@@ -19,6 +19,7 @@ interface Args extends ParsedArgs {
   // minimist --no- prefix: --no-verify / --no-skills / --no-context-files set these to false; NOT in boolean[] to avoid double-negation
   verify?: boolean;
   ephemeral: boolean;
+  persist: boolean;
   local: boolean;
   skills?: boolean;
   "context-files"?: boolean;
@@ -607,6 +608,9 @@ Options:
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
   --no-context-files     Disable mounting global context files (~/.agents/AGENTS.md, ~/.claude/CLAUDE.md); alias -nc
   --ephemeral            Disable session persistence (implied by -p and piped stdin)
+  --persist              Keep session persistence even with -p / piped stdin; the agent's
+                         state and log dirs mount from the host, so after a failed run its
+                         own logs are readable under $XDG_DATA_HOME/harness/<project>/<agent>/
   --local                Force local mode even with -e (use LM Studio / local defaults)
   --mount-entire-home    Allow running from your home directory (mounts all of $HOME as the workspace)
   --network <name>       Attach the container to an existing network (e.g. one wired to a corp proxy)
@@ -658,7 +662,7 @@ function getImage(agent: string): string {
 }
 
 const MINIMIST_OPTS = {
-  boolean: ["help", "h", "ephemeral", "local", "mount-entire-home"],
+  boolean: ["help", "h", "ephemeral", "persist", "local", "mount-entire-home"],
   string: [
     "env-file",
     "e",
@@ -733,7 +737,8 @@ const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
 const modelArg = argv.model || null;
 const effectiveEphemeral =
-  argv.ephemeral || promptArg !== null || !process.stdin.isTTY;
+  (argv.ephemeral || promptArg !== null || !process.stdin.isTTY) &&
+  argv.persist !== true;
 
 const agentName: AgentName = (() => {
   const name = argv.agent ?? "pi";

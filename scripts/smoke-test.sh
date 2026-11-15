@@ -79,6 +79,15 @@ fi
 # entrypoint seed currently fails. Force docker unless the caller overrides.
 export HARNESS_CONTAINER_RUNTIME="${HARNESS_CONTAINER_RUNTIME:-docker}"
 
+# -p implies --ephemeral, which would leave the agent's in-container logs to
+# die with the --rm container — a failed scenario would leave nothing behind
+# but the client-side error. --persist mounts the per-agent state/log dirs
+# from the host so dump_agent_logs() (below) can read them after a failure.
+case " ${HARNESS_EXTRA_ARGS:-} " in
+  *" --persist "*) : ;;
+  *) export HARNESS_EXTRA_ARGS="${HARNESS_EXTRA_ARGS:-} --persist" ;;
+esac
+
 mkdir -p integration-output
 OUTPUT_DIR="$(pwd)/integration-output"
 PASS=0
@@ -156,6 +165,22 @@ check_fail() {
 show_output() {
   echo "    --- output ---"
   tail -20 "$SCENARIO_OUT" 2>/dev/null | sed 's/^/    /'
+  dump_agent_logs
+}
+
+# Tail the agent's own logs (persisted via --persist above) after a failure.
+# Each scenario runs in its own workspace, so its persist bucket lives under
+# ~/.local/share/harness/<normalized-workspace>/<agent>/; find any log the
+# run just touched instead of guessing the bucket name.
+dump_agent_logs() {
+  local found=0
+  while IFS= read -r f; do
+    [ "$found" -eq 0 ] && echo "    --- agent logs (persisted) ---"
+    found=1
+    echo "    [tail: ${f#"${HOME}"/}]"
+    tail -n 40 "$f" 2>/dev/null | sed 's/^/    /'
+  done < <(find "$HOME/.local/share/harness" -name '*.log' -mmin -5 -type f 2>/dev/null | sort)
+  [ "$found" -eq 0 ] && echo "    --- agent logs: none found under ~/.local/share/harness ---"
 }
 
 # --- scenario 1: sentinel edit ------------------------------------------------

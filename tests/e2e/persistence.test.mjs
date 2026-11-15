@@ -55,6 +55,47 @@ test("one-shot run (-p) is implicitly ephemeral: no .harness/ dir created", () =
   );
 });
 
+test("--persist overrides the -p implication: persist dirs mount, logs land on host", () => {
+  // One-shot runs (-p) are implicitly ephemeral, so the agent's in-container
+  // state/log dirs die with the --rm container — a failed smoke scenario
+  // leaves no agent logs behind. --persist re-enables the persistence mounts
+  // for exactly that case: the run() path must materialize the adapter's
+  // persist dirs and include them in the docker args even though -p is set.
+  //
+  // This locks `effectiveEphemeral = (…implied…) && argv.persist !== true`
+  // so a future refactor can't drop the override.
+  const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
+  const xdgData = path.join(homeDir, ".local", "share");
+  fs.mkdirSync(xdgData, { recursive: true });
+  const r = spawnSync("node", [CLI, "-p", "noop", "--persist"], {
+    cwd: localWork,
+    env: {
+      ...process.env,
+      PATH: `${SHIM_DIR}:${process.env.PATH}`,
+      HARNESS_IMAGE_TAG: "test-tag",
+      HOME: homeDir,
+      XDG_DATA_HOME: xdgData,
+    },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const nCwd = normalizeCwd(localWork, homeDir);
+  assert.equal(
+    fs.existsSync(path.join(xdgData, "harness", nCwd, "pi")),
+    true,
+    `XDG_DATA_HOME/harness/${nCwd}/pi/ should be created with --persist despite -p`,
+  );
+  const a = runtimeArgsAny(r.stdout);
+  assert.ok(a, `expected DOCKER_INVOKED line in: ${r.stdout}`);
+  const mountTarget = "/home/harness/.pi/agent";
+  const hasMount = a.some((arg) => arg.endsWith(`:${mountTarget}`));
+  assert.ok(
+    hasMount,
+    `expected a -v mount ending in :${mountTarget} in: ${a.join(" ")}`,
+  );
+});
+
 test("piped stdin is implicitly ephemeral and forwards prompt", () => {
   const localWork = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-cwd-"));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-e2e-home-"));
