@@ -30,8 +30,8 @@ TIMEOUT="${TIMEOUT:-120}"
 # both forms. The env file must carry OPENROUTER_API_KEY (CI provides
 # only that key).
 case "$AGENT" in
-  hermes) MODEL="${2:-stepfun/step-3.5-flash}" ;;
-  *)      MODEL="${2:-openrouter/stepfun/step-3.5-flash}" ;;
+  hermes) MODEL="${2:-meta/muse-ember}" ;;
+  *)      MODEL="${2:-openrouter/meta/muse-ember}" ;;
 esac
 
 NODE_BIN="${NODE_BIN:-node}"
