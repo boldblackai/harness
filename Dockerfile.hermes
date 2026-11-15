@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=ghcr.io/boldblackai/harness:latest
-ARG UV_DIGEST=sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
+ARG UV_DIGEST=sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490
 
 FROM ghcr.io/astral-sh/uv@${UV_DIGEST} AS uv-src
 
@@ -7,8 +7,8 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG UV_VERSION=0.13.5
-ARG UV_DIGEST=sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
+ARG UV_VERSION=0.13.7
+ARG UV_DIGEST=sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490
 ARG COSIGN_VERSION=3.1.4
 ARG COSIGN_AMD64_SHA256=424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
 ARG COSIGN_ARM64_SHA256=ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2
@@ -99,39 +99,54 @@ RUN set -eux && \
     tar -xzf "/tmp/${TIRITH_FILE}" -C /usr/local/bin/ tirith && \
     rm -f /tmp/checksums.txt /tmp/checksums.txt.pem /tmp/checksums.txt.sig "/tmp/${TIRITH_FILE}"
 
+# Mirrors upstream's [tool.uv] override-dependencies for the one conflict our
+# install resolution hits; see hermes-uv-overrides.txt for provenance and the
+# removal condition.
+COPY hermes-uv-overrides.txt /tmp/hermes-uv-overrides.txt
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3-dev build-essential git libffi-dev libolm-dev \
     && uv python install --no-cache 3.14.8 \
-    && git clone --depth 1 --branch v0.22.4 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git clone --depth 1 --branch v0.23.1 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python 3.14.8 \
-    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
+    # telegram + stt-whisper are upstream's own extras: python-telegram-bot
+    # 22.8 (with [webhooks], matching upstream's pin) and faster-whisper 1.2.1
+    # now ride the project's pins instead of hand-maintained side pins. The
+    # kokoro-onnx side pin is dropped entirely: upstream removed it in v0.23
+    # (local TTS moved to KittenTTS/Piper) and local TTS has been removed due
+    # to lack of demand. Lazy installs are disabled, so local TTS exists only
+    # when baked here:
+    # add kittentts/piper to the extras line if a deployment needs it (models
+    # and voices still download at first use).
+    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --overrides /tmp/hermes-uv-overrides.txt --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic,telegram,stt-whisper] \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer-package 'certifi=2999-01-01T00:00:00Z' "certifi==2026.10.19" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
     && cd /opt/hermes-agent \
-    # Build the web UI with PM's pinned node, not the base image's (#204).
-    # The build receipt (web_dist/hermes-build.json) records the node that
-    # compiled it; hermes v0.21.6 reads that receipt only via PM's node and
-    # requires the recorded version to match the reader's. A dist baked with
-    # the base image's node reads stale forever, boot attempts a rebuild, and
-    # with web/node_modules pruned and lazy installs disabled that rebuild can
-    # never succeed — the dashboard container crash-loops.
-    && python3 -c 'from pm import ensure; ensure("node", explicit=True); ensure("npm", explicit=True)' \
+    # Build the web UI with PM's pinned toolchain, not the base image's (#204).
+    # Since v0.23 the repo is a pnpm workspace: plain `npm install` in web/ dies
+    # on the workspace:* protocol, and scripts/build/node-deps.mjs refuses any
+    # pnpm but the pin recorded in pm/lock.json — so both node and pnpm come
+    # from PM. node-deps.mjs installs the web workspace's locked closure
+    # (filter `./web...` includes @hermes/shared); web.mjs with no args builds
+    # in-tree into hermes_cli/web_dist (the build receipt it records is read
+    # back via PM's node — same class of stale-receipt guard as #204).
+    && python3 -c 'from pm import ensure; ensure("node", explicit=True); ensure("pnpm", explicit=True)' \
     # Resolve the PM-provisioned bins and fail loud if either is missing — a
-    # silent miss would degrade PATH to the base image's node and recreate the
-    # stale-receipt crash loop this fixes (#204). npm's bin dir goes FIRST so
-    # PM's pinned npm shadows the npm bundled inside node, matching the PATH
-    # order pm.env_for composes (pm/package.py: npm must shadow node's npm).
-    && PM_NODE_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("node", path=env_for("npm")["PATH"]))')" \
-    && PM_NPM_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("npm", path=env_for("npm")["PATH"]))')" \
-    && test -n "$PM_NODE_BIN" && test -n "$PM_NPM_BIN" \
-    && cd /opt/hermes-agent/web \
-    && PATH="$(dirname "$PM_NPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" npm install \
-    && PATH="$(dirname "$PM_NPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" npm run build \
+    # silent miss would degrade PATH to the base image's node/pnpm and recreate
+    # the stale-receipt crash loop this fixes (#204). The pnpm bin dir goes
+    # first: PM's pinned pnpm (12.15.0 per pm/lock.json) must shadow the base
+    # image's corepack pnpm, which node-deps.mjs refuses.
+    && PM_NODE_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("node", path=env_for("pnpm")["PATH"]))')" \
+    && PM_PNPM_BIN="$(python3 -c 'import shutil; from pm import env_for; print(shutil.which("pnpm", path=env_for("pnpm")["PATH"]))')" \
+    && test -n "$PM_NODE_BIN" && test -n "$PM_PNPM_BIN" \
+    && PATH="$(dirname "$PM_PNPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" node scripts/build/node-deps.mjs --source /opt/hermes-agent --workspace web \
+    && PATH="$(dirname "$PM_PNPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" node scripts/build/web.mjs \
+    && test -f /opt/hermes-agent/hermes_cli/web_dist/index.html \
     && cd / \
     && chown -R harness:harness /opt/hermes-agent \
-    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /root/.cache/uv /root/.hermes /root/.npm \
+    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /opt/hermes-agent/node_modules /root/.cache/uv /root/.hermes /root/.npm /root/.local/share/pnpm \
     && rm -rf /var/lib/apt/lists/*
 
 # Chromium shared libraries required to run Playwright browsers (the default
