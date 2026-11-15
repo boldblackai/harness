@@ -99,14 +99,19 @@ RUN set -eux && \
     tar -xzf "/tmp/${TIRITH_FILE}" -C /usr/local/bin/ tirith && \
     rm -f /tmp/checksums.txt /tmp/checksums.txt.pem /tmp/checksums.txt.sig "/tmp/${TIRITH_FILE}"
 
+# Mirrors upstream's [tool.uv] override-dependencies for the one conflict our
+# install resolution hits; see hermes-uv-overrides.txt for provenance and the
+# removal condition.
+COPY hermes-uv-overrides.txt /tmp/hermes-uv-overrides.txt
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3-dev build-essential git libffi-dev libolm-dev \
     && uv python install --no-cache 3.14.8 \
-    && git clone --depth 1 --branch v0.22.4 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git clone --depth 1 --branch v0.23.1 https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-agent/venv --python 3.14.8 \
-    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
+    && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --overrides /tmp/hermes-uv-overrides.txt --exclude-newer="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" -e /opt/hermes-agent[mcp,web,pty,matrix,bedrock,slack,anthropic] "python-telegram-bot==22.6" "faster-whisper==1.2.1" "kokoro-onnx==0.5.0" \
     && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache-dir --exclude-newer-package 'certifi=2999-01-01T00:00:00Z' "certifi==2026.10.19" \
     && ln -sf /opt/hermes-agent/venv/bin/hermes /usr/local/bin/hermes \
     && cd /opt/hermes-agent \

@@ -1,0 +1,20 @@
+# uv overrides for the hermes-agent install in Dockerfile.hermes.
+#
+# hermes-agent >= v0.22.5 pins Pillow==13.0.0 (security floor: the 12.x
+# advisory set is first fixed in 13.0.0) while its core dependency
+# browser-harness==0.1.13 still pins pillow==12.3.0 exactly. Upstream
+# reconciles the pair with [tool.uv] override-dependencies in pyproject.toml,
+# which `uv lock`/`uv sync` honor but `uv pip install` (what this image uses)
+# ignores — so the override is mirrored here and rides the install line via
+# --overrides. Upstream's own comment documents browser-harness only uses
+# Image.open/new/convert/compose/draw APIs, none of which changed in 13.
+#
+# Only the Pillow override intersects the extras this image installs
+# (mcp,web,pty,matrix,bedrock,slack,anthropic): upstream's other overrides
+# (pynacl, cryptography, spacy-curated-transformers) guard extras this image
+# does not install and add no conflict for this resolution.
+#
+# Upstream tracking: NousResearch/hermes-agent#143313
+# Remove this file (and the --overrides flag in Dockerfile.hermes) when
+# browser-harness ships a release allowing Pillow 13.
+Pillow==13.0.0
