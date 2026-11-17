@@ -144,9 +144,25 @@ RUN apt-get update && \
     && PATH="$(dirname "$PM_PNPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" node scripts/build/node-deps.mjs --source /opt/hermes-agent --workspace web \
     && PATH="$(dirname "$PM_PNPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" node scripts/build/web.mjs \
     && test -f /opt/hermes-agent/hermes_cli/web_dist/index.html \
+    # Webapp (browser-hosted Desktop) bundle: upstream's own webapp_build
+    # recipe (its Dockerfile's webapp_build stage), run in this checkout with
+    # the same PM-pinned toolchain. build-webapp.mjs --deps-only installs the
+    # private build workspace (the apps/desktop closure, no Electron binary)
+    # keyed on the manifests; the build writes apps/desktop/dist-webapp with a
+    # freshness receipt, so a later `hermes webapp` proves the bundle current
+    # and never rebuilds. Verified below, like web_dist is.
+    && PATH="$(dirname "$PM_PNPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" node apps/desktop/scripts/build-webapp.mjs --deps-only \
+    && PATH="$(dirname "$PM_PNPM_BIN"):$(dirname "$PM_NODE_BIN"):$PATH" node apps/desktop/scripts/build-webapp.mjs \
+    && test -f /opt/hermes-agent/apps/desktop/dist-webapp/index.html \
     && cd / \
     && chown -R harness:harness /opt/hermes-agent \
-    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /opt/hermes-agent/node_modules /root/.cache/uv /root/.hermes /root/.npm /root/.local/share/pnpm \
+    # Ship only dist-webapp, like upstream's runtime image: the private webapp
+    # build workspace is not kept. The runtime needs no node/pnpm - the baked
+    # bundle carries its freshness receipt and `hermes webapp` proves it
+    # current without rebuilding. There is no in-image update or rebuild path:
+    # hermes updates ship bundled in new images (same as lazy installs, which
+    # are disabled by design).
+    && rm -rf /opt/hermes-agent/.git /opt/hermes-agent/web/node_modules /opt/hermes-agent/node_modules /opt/hermes-agent/.build /root/.cache/uv /root/.hermes /root/.npm /root/.local/share/pnpm \
     && rm -rf /var/lib/apt/lists/*
 
 # Chromium shared libraries required to run Playwright browsers (the default
