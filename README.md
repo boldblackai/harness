@@ -185,8 +185,9 @@ harness --desktop
 
 - `--desktop` implies `-a hermes` (it errors with any other explicit
   `-a`) and publishes `3000:3000`. If you already publish container
-  port 3000 yourself (e.g. `--port 8080:3000`), that publish is used
-  and no extra one is added.
+  port 3000 yourself over TCP or without a protocol suffix (e.g.
+  `--port 8080:3000`), that publish is used and no extra one is added;
+  a udp/sctp publish of container port 3000 does not count.
 - A sign-in password is generated at first start, persisted in the
   hermes session data (`$XDG_DATA_HOME/harness/<project>/hermes/.env`,
   mode 0600), and printed in the terminal at every start. Set your own
@@ -293,7 +294,7 @@ Local-only mode pairs naturally with local mode: `harness --local --egress none`
 | `--agent`     | `-a`  | Select agent: `pi`, `opencode`, `hermes` (default: `pi`) |
 | `--volumes`   | `-v`  | Additional volume mount (`host:container[:opts]`); may be repeated |
 | `--port`      |       | Publish a container port to the host (`[host-ip:]host-port:container-port[/protocol]`); may be repeated |
-| `--desktop`   |       | Serve the hermes Webapp (browser Desktop) at `http://localhost:3000`; implies `-a hermes` (errors with any other `-a`) and a `3000:3000` publish (skipped when you already publish container port 3000); see [Browser Desktop](#browser-desktop) |
+| `--desktop`   |       | Serve the hermes Webapp (browser Desktop) at `http://localhost:3000`; implies `-a hermes` (errors with any other `-a`) and a `3000:3000` publish (skipped when you already publish container port 3000 over TCP or without a protocol suffix); see [Browser Desktop](#browser-desktop) |
 | `--no-verify` |       | Skip cosign signature and provenance verification |
 | `--no-skills` |       | Disable mounting user skills directories (`~/.agents/skills`, `~/.claude/skills`) |
 | `--no-context-files` | `-nc` | Disable mounting global context files (`~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`) |
