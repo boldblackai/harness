@@ -47,7 +47,10 @@ test("--desktop implies a 3000:3000 publish and the desktop env vars", () => {
   const r = runCli(["--desktop", "-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
   const a = runtimeArgsAny(r.stdout);
-  assert.ok(a.includes("3000:3000"), `expected 3000:3000 publish in: ${a.join(" ")}`);
+  assert.ok(
+    a.includes("3000:3000"),
+    `expected 3000:3000 publish in: ${a.join(" ")}`,
+  );
   assert.ok(
     a.includes("HARNESS_DESKTOP=1"),
     `expected HARNESS_DESKTOP=1 env in: ${a.join(" ")}`,
@@ -62,7 +65,10 @@ test("--desktop reuses a user publish of container port 3000 (no double publish)
   const r = runCli(["--desktop", "--port", "8080:3000", "-p", "noop"]);
   assert.equal(r.status, 0, r.stderr);
   const a = runtimeArgsAny(r.stdout);
-  assert.ok(a.includes("8080:3000"), `expected 8080:3000 publish in: ${a.join(" ")}`);
+  assert.ok(
+    a.includes("8080:3000"),
+    `expected 8080:3000 publish in: ${a.join(" ")}`,
+  );
   assert.ok(
     !a.includes("3000:3000"),
     `3000:3000 must NOT be added when the user publishes container 3000: ${a.join(" ")}`,
