@@ -606,7 +606,8 @@ Options:
   --port <spec>          Publish a container port to the host ([host-ip:]host-port:container-port[/protocol]); may be repeated
   --desktop              Serve the hermes Webapp (browser Desktop) at http://localhost:3000; implies -a hermes
                          (errors with any other -a) and a 3000:3000 publish (skipped when you already publish
-                         container port 3000). Prints a generated sign-in password at start
+                         container port 3000 over TCP or without a protocol suffix). Prints a generated
+                         sign-in password at start
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
   --no-context-files     Disable mounting global context files (~/.agents/AGENTS.md, ~/.claude/CLAUDE.md); alias -nc
