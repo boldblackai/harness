@@ -88,6 +88,42 @@ test("--desktop adds 3000:3000 alongside a publish of an unrelated port", () => 
   assert.ok(a.includes("HARNESS_DESKTOP_HOST_PORT=3000"));
 });
 
+test("--desktop: a udp container-3000 publish does NOT suppress the implied TCP publish", () => {
+  const r = runCli(["--desktop", "--port", "8080:3000/udp", "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = runtimeArgsAny(r.stdout);
+  assert.ok(
+    a.includes("8080:3000/udp"),
+    `expected the udp publish kept in: ${a.join(" ")}`,
+  );
+  assert.ok(
+    a.includes("3000:3000"),
+    `udp must NOT suppress the implied TCP publish: ${a.join(" ")}`,
+  );
+  assert.ok(
+    a.includes("HARNESS_DESKTOP_HOST_PORT=3000"),
+    `expected HARNESS_DESKTOP_HOST_PORT=3000 in: ${a.join(" ")}`,
+  );
+});
+
+test("--desktop: an explicit tcp container-3000 publish still suppresses (URL follows it)", () => {
+  const r = runCli(["--desktop", "--port", "8080:3000/tcp", "-p", "noop"]);
+  assert.equal(r.status, 0, r.stderr);
+  const a = runtimeArgsAny(r.stdout);
+  assert.ok(
+    a.includes("8080:3000/tcp"),
+    `expected the tcp publish in: ${a.join(" ")}`,
+  );
+  assert.ok(
+    !a.includes("3000:3000"),
+    `3000:3000 must NOT be added when a tcp publish covers container 3000: ${a.join(" ")}`,
+  );
+  assert.ok(
+    a.includes("HARNESS_DESKTOP_HOST_PORT=8080"),
+    `expected HARNESS_DESKTOP_HOST_PORT=8080 in: ${a.join(" ")}`,
+  );
+});
+
 test("HARNESS_DESKTOP_PASSWORD is forwarded only when set", () => {
   const without = runCli(["--desktop", "-p", "noop"]);
   assert.equal(without.status, 0, without.stderr);

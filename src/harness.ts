@@ -855,14 +855,16 @@ for (const spec of portArgList) {
 
 // --desktop implies a 3000:3000 publish unless the user already publishes
 // container port 3000 themselves; the host port of that publish is what
-// the printed Desktop URL uses.
+// the printed Desktop URL uses. Only a tcp (or protocol-less, which the
+// runtimes default to tcp) publish counts — a udp/sctp one would leave the
+// TCP Webapp unpublished and the printed URL dead.
 const desktopHostPort = (() => {
   if (!desktopMode) {
     return null;
   }
   for (const spec of portArgList) {
     const match = spec.match(PORT_SPEC_REGEXP);
-    if (match && match[2] === "3000") {
+    if (match && match[2] === "3000" && (match[3] ?? "tcp") === "tcp") {
       return match[1];
     }
   }
