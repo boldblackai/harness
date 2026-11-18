@@ -715,11 +715,7 @@ const argv = minimist<Args>(rawArgs, MINIMIST_OPTS);
     "context-files", // --no-context-files / -nc sets context-files=false
     "local",
   ]);
-  // `--desktop`/`--no-desktop` always hard-error with migration guidance
-  // below; don't stack an "unrecognized flag" warning on top of it.
-  const unknown = Object.keys(argv).filter(
-    (k) => !knownKeys.has(k) && k !== "desktop",
-  );
+  const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
   if (unknown.length > 0) {
     process.stderr.write(
       `warning: unrecognized flag(s): ${unknown.map((k) => `--${k}`).join(", ")}\n`,
@@ -740,12 +736,6 @@ const localMode = argv.local;
 // The `harness desktop` subcommand serves the hermes Webapp only: no
 // agent command runs (no TUI), the browser is the interface.
 const desktopMode = argv._[0] === "desktop";
-if (argv.desktop !== undefined) {
-  console.error(
-    "harness: the --desktop flag is now the `desktop` subcommand: run `harness desktop`",
-  );
-  process.exit(1);
-}
 const envFilePaths: string[] = Array.isArray(argv["env-file"])
   ? argv["env-file"]
   : argv["env-file"]
