@@ -20,6 +20,7 @@ interface Args extends ParsedArgs {
   verify?: boolean;
   ephemeral: boolean;
   local: boolean;
+  desktop: boolean;
   skills?: boolean;
   "context-files"?: boolean;
   "mount-entire-home"?: boolean;
@@ -603,6 +604,9 @@ Options:
   -a, --agent <name>     Select the coding agent adapter: pi, opencode, hermes (default: pi)
   -v, --volumes <spec>   Additional volume mount (host:container[:opts]); may be repeated
   --port <spec>          Publish a container port to the host ([host-ip:]host-port:container-port[/protocol]); may be repeated
+  --desktop              Serve the hermes Webapp (browser Desktop) at http://localhost:3000; implies -a hermes
+                         (errors with any other -a) and a 3000:3000 publish (skipped when you already publish
+                         container port 3000). Prints a generated sign-in password at start
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
   --no-context-files     Disable mounting global context files (~/.agents/AGENTS.md, ~/.claude/CLAUDE.md); alias -nc
@@ -619,6 +623,7 @@ Environment variables:
   HARNESS_REGISTRY            Override the container registry (defaults to ghcr.io/boldblackai/harness)
   HARNESS_CONTAINER_RUNTIME   Container runtime: auto (default; prefers Apple container on macOS), docker, apple (deprecated)
   HARNESS_EGRESS_SUBNET       Override the egress network subnet pool (IPv4 CIDR, default 192.0.2.0/24 split into /29s)
+  HARNESS_DESKTOP_PASSWORD    Set the Webapp sign-in password for --desktop (default: generated at first start)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
 
@@ -658,7 +663,7 @@ function getImage(agent: string): string {
 }
 
 const MINIMIST_OPTS = {
-  boolean: ["help", "h", "ephemeral", "local", "mount-entire-home"],
+  boolean: ["help", "h", "ephemeral", "local", "mount-entire-home", "desktop"],
   string: [
     "env-file",
     "e",
@@ -724,6 +729,7 @@ const noSkills = argv.skills === false;
 const noContextFiles = argv["context-files"] === false;
 const mountEntireHome = argv["mount-entire-home"] === true;
 const localMode = argv.local;
+const desktopMode = argv.desktop === true;
 const envFilePaths: string[] = Array.isArray(argv["env-file"])
   ? argv["env-file"]
   : argv["env-file"]
@@ -732,10 +738,26 @@ const envFilePaths: string[] = Array.isArray(argv["env-file"])
 const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
 const modelArg = argv.model || null;
+// --desktop keeps persistence on even with -p or piped stdin (a Desktop
+// session should survive like any interactive one); an explicit
+// --ephemeral still wins.
 const effectiveEphemeral =
-  argv.ephemeral || promptArg !== null || !process.stdin.isTTY;
+  argv.ephemeral ||
+  (!desktopMode && (promptArg !== null || !process.stdin.isTTY));
 
 const agentName: AgentName = (() => {
+  if (desktopMode) {
+    // The Desktop is a hermes feature: imply -a hermes, and refuse an
+    // explicit other agent rather than silently switching.
+    const requested = argv.agent;
+    if (requested !== undefined && requested !== "hermes") {
+      console.error(
+        `harness: --desktop works only with -a hermes (got -a "${requested}"); drop -a or pass -a hermes`,
+      );
+      process.exit(1);
+    }
+    return "hermes";
+  }
   const name = argv.agent ?? "pi";
   if (!isAgentName(name)) {
     console.error(
@@ -830,6 +852,23 @@ for (const spec of portArgList) {
     process.exit(1);
   }
 }
+
+// --desktop implies a 3000:3000 publish unless the user already publishes
+// container port 3000 themselves; the host port of that publish is what
+// the printed Desktop URL uses.
+const desktopHostPort = (() => {
+  if (!desktopMode) {
+    return null;
+  }
+  for (const spec of portArgList) {
+    const match = spec.match(PORT_SPEC_REGEXP);
+    if (match && match[2] === "3000") {
+      return match[1];
+    }
+  }
+  portArgList.push("3000:3000");
+  return "3000";
+})();
 
 // ---------------------------------------------------------------------------
 // Egress control (rfcs/2026-10-08_egress_allowlist.md), Tier 1: pass an
@@ -1511,6 +1550,23 @@ async function run(prompt: string | null): Promise<void> {
   const cloudModeEnv =
     envFilePaths.length > 0 && !localMode ? ["-e", "HARNESS_CLOUD_MODE=1"] : [];
 
+  // --desktop: the entrypoint wires the Webapp (config + sign-in
+  // credentials) from these. HARNESS_DESKTOP_PASSWORD is the user's own
+  // password knob.
+  const desktopEnv: string[] =
+    desktopHostPort === null
+      ? []
+      : [
+          "-e",
+          "HARNESS_DESKTOP=1",
+          "-e",
+          `HARNESS_DESKTOP_HOST_PORT=${desktopHostPort}`,
+        ];
+  const desktopPassword = process.env.HARNESS_DESKTOP_PASSWORD ?? "";
+  if (desktopHostPort !== null && desktopPassword !== "") {
+    desktopEnv.push("-e", `HARNESS_DESKTOP_PASSWORD=${desktopPassword}`);
+  }
+
   const adapter = ADAPTERS[agentName];
   const adapterOptions = { prompt, model: modelArg, envFilePaths };
   const containerCmd = adapter.buildCommand(adapterOptions);
@@ -1627,6 +1683,7 @@ async function run(prompt: string | null): Promise<void> {
     envFileArgs,
     envArgs: [
       ...cloudModeEnv,
+      ...desktopEnv,
       ...adapterDockerArgs,
       ...(egress?.envArgs ?? []),
     ],

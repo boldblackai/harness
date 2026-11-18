@@ -41,4 +41,65 @@ if [ -n "$HERMES_MODEL" ]; then
 	hermes config set model.default "$HERMES_MODEL" >/dev/null 2>&1
 fi
 
+# --desktop: serve the Webapp (browser-hosted Desktop) from this
+# container. Mechanical setup: config, first-boot sign-in credentials,
+# gateway launch - no agent prompt involved.
+DESKTOP_OK=0
+if [ -n "${HARNESS_DESKTOP:-}" ]; then
+	hermes config set webapp.enabled true >/dev/null 2>&1 || true
+	hermes config set webapp.host 0.0.0.0 >/dev/null 2>&1 || true
+	hermes config set webapp.port 3000 >/dev/null 2>&1 || true
+
+	# First-boot sign-in credentials (basic auth): generated once, persisted
+	# in ~/.hermes/.env (0600), printed at every start. The password is
+	# taken from HARNESS_DESKTOP_PASSWORD when set (then it replaces the
+	# stored one). The session secret is generated once too, so logins
+	# survive restarts.
+	if [ -n "${HARNESS_DESKTOP_PASSWORD:-}" ]; then
+		DESKTOP_PASSWORD="$HARNESS_DESKTOP_PASSWORD"
+	else
+		DESKTOP_PASSWORD=$(grep '^HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=' "$HERMES_HOME/.env" 2>/dev/null | cut -d= -f2- | head -1)
+		if [ -z "$DESKTOP_PASSWORD" ]; then
+			DESKTOP_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')
+		fi
+	fi
+	DESKTOP_SECRET=$(grep '^HERMES_DASHBOARD_BASIC_AUTH_SECRET=' "$HERMES_HOME/.env" 2>/dev/null | cut -d= -f2- | head -1)
+	if [ -z "$DESKTOP_SECRET" ]; then
+		DESKTOP_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')
+	fi
+	: >"$HERMES_HOME/.env.desktop"
+	if [ -f "$HERMES_HOME/.env" ]; then
+		grep -v -e '^HERMES_DASHBOARD_BASIC_AUTH_' "$HERMES_HOME/.env" >>"$HERMES_HOME/.env.desktop" || true
+	fi
+	{
+		echo "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin"
+		echo "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=$DESKTOP_PASSWORD"
+		echo "HERMES_DASHBOARD_BASIC_AUTH_SECRET=$DESKTOP_SECRET"
+	} >>"$HERMES_HOME/.env.desktop"
+	mv "$HERMES_HOME/.env.desktop" "$HERMES_HOME/.env"
+	chmod 600 "$HERMES_HOME/.env"
+
+	# Launch: starts the gateway (no idle-exit) and proves the baked bundle
+	# exists. An image without the bundle fails here - loudly - and the
+	# session continues without the Desktop.
+	if DESKTOP_OUT=$(hermes webapp --no-open --skip-build 2>&1); then
+		DESKTOP_OK=1
+		echo "harness desktop: http://localhost:${HARNESS_DESKTOP_HOST_PORT:-3000} - sign in: admin / $DESKTOP_PASSWORD"
+	else
+		echo "harness: ERROR: --desktop requested but the Webapp is not available in this image:" >&2
+		echo "$DESKTOP_OUT" >&2
+		echo "harness: continuing without the Desktop." >&2
+	fi
+fi
+
+if [ "$DESKTOP_OK" = 1 ]; then
+	# The Desktop outlives the agent command: run it as a child, then hand
+	# PID 1 to the gateway so the Webapp keeps serving until the container
+	# stops (docker stop / Ctrl-C).
+	rc=0
+	"$@" || rc=$?
+	echo "harness desktop: agent command exited ($rc); the Desktop keeps serving until the container stops"
+	exec hermes gateway run --replace
+fi
+
 exec "$@"
