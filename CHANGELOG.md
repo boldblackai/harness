@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.14.0] - 2026-11-17
+
+### Summary
+
+The hermes Webapp is now exposable as a browser Desktop from the container via the new `harness desktop` subcommand — serve-only (no TUI), the browser chat is the interface, and the container prints a sign-in link (generated password, persisted 0600 in the session data, printed at every start) and serves until you stop it. The Webapp bundle is baked into the hermes image at build time, the container-3000 publish dedupe counts only TCP publishes (a udp publish no longer suppresses the implied `3000:3000` and leaves the printed URL dead), and the smoke-test model pin moved to `deepseek/deepseek-v4.1-flash-1017`.
+
+```bash
+harness desktop
+# harness desktop: http://localhost:3000 - sign in: admin / <generated password>
+```
+
+### Changes
+
+- b01abc7 feat: serve-only `desktop` subcommand + tcp-only publish dedupe (#223)
+- 86c7850 fix(ci): smoke-test model meta/muse-ember -> deepseek/deepseek-v4.1-flash-1017 (flaky upstream) (#219)
+- ed2cf73 feat: add --desktop flag to serve the hermes Webapp from the container (#222)
+- 5c9f691 feat(hermes): bake the Webapp bundle into the image (#221)
+
 ## [1.13.0] - 2026-11-15
 
 ### Summary
