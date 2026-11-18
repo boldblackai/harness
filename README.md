@@ -73,6 +73,7 @@ That's it. Your current directory is mounted at `/workspace` inside the containe
   - [pi (default)](#pi-default)
   - [opencode](#opencode)
   - [hermes](#hermes)
+  - [Browser Desktop](#browser-desktop)
 - [Security model](#security-model)
   - [Sandbox](#sandbox)
   - [Image verification](#image-verification)
@@ -109,6 +110,9 @@ npx @boldblackai/harness -f ./script.py -p "add type hints"
 # Switch agents
 npx @boldblackai/harness -a opencode -p "write me a fizzbuzz in Go"
 npx @boldblackai/harness -a hermes -e .env -p "add tests"
+
+# Serve the browser Desktop (no TUI — the browser chat is the interface)
+npx @boldblackai/harness desktop
 ```
 
 `npx`, `bunx`, and `pnpm dlx` are interchangeable. Or install globally:
@@ -175,29 +179,32 @@ Common keys: `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGL
 
 ### Browser Desktop
 
-`--desktop` serves the hermes Webapp - the browser-hosted Desktop -
-from the container:
+`harness desktop` serves the hermes Webapp - the browser-hosted
+Desktop - from the container. It runs no agent command (no TUI): the
+Desktop's browser chat is the interface.
 
 ```bash
-harness --desktop
+harness desktop
 # harness desktop: http://localhost:3000 - sign in: admin / <generated password>
 ```
 
-- `--desktop` implies `-a hermes` (it errors with any other explicit
-  `-a`) and publishes `3000:3000`. If you already publish container
-  port 3000 yourself (e.g. `--port 8080:3000`), that publish is used
-  and no extra one is added.
+- `harness desktop` implies `-a hermes` (it errors with any other
+  explicit `-a`) and takes no prompt (it errors with `-p`). It
+  publishes `3000:3000`. If you already publish container port 3000
+  yourself over TCP or without a protocol suffix (e.g. `--port
+  8080:3000`), that publish is used and no extra one is added; a
+  udp/sctp publish of container port 3000 does not count.
 - A sign-in password is generated at first start, persisted in the
   hermes session data (`$XDG_DATA_HOME/harness/<project>/hermes/.env`,
   mode 0600), and printed in the terminal at every start. Set your own
-  with `HARNESS_DESKTOP_PASSWORD=... harness --desktop`. The Webapp is
+  with `HARNESS_DESKTOP_PASSWORD=... harness desktop`. The Webapp is
   gated by this sign-in - treat the password like one.
-- Persistence stays on even with `-p` or piped stdin (an explicit
-  `--ephemeral` still wins). After the agent command exits, the
-  container keeps serving the Desktop until you stop it.
+- The container keeps serving the Desktop until you stop it (the
+  gateway holds the container open). Persistence stays on like an
+  interactive run (an explicit `--ephemeral` still wins).
 - On an image without a baked Webapp bundle (images older than the
-  bundle build), harness prints an error and the session continues
-  without the Desktop.
+  bundle build), harness prints an error and the container exits -
+  serve-only mode has nothing else to run.
 
 The Desktop is served over plain HTTP; browser features that need a
 secure context (microphone, clipboard, notifications) are limited -
@@ -293,7 +300,6 @@ Local-only mode pairs naturally with local mode: `harness --local --egress none`
 | `--agent`     | `-a`  | Select agent: `pi`, `opencode`, `hermes` (default: `pi`) |
 | `--volumes`   | `-v`  | Additional volume mount (`host:container[:opts]`); may be repeated |
 | `--port`      |       | Publish a container port to the host (`[host-ip:]host-port:container-port[/protocol]`); may be repeated |
-| `--desktop`   |       | Serve the hermes Webapp (browser Desktop) at `http://localhost:3000`; implies `-a hermes` (errors with any other `-a`) and a `3000:3000` publish (skipped when you already publish container port 3000); see [Browser Desktop](#browser-desktop) |
 | `--no-verify` |       | Skip cosign signature and provenance verification |
 | `--no-skills` |       | Disable mounting user skills directories (`~/.agents/skills`, `~/.claude/skills`) |
 | `--no-context-files` | `-nc` | Disable mounting global context files (`~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`) |
@@ -311,7 +317,7 @@ Local-only mode pairs naturally with local mode: `harness --local --egress none`
 | `HARNESS_IMAGE_TAG`         | Override the Docker image tag (defaults to the package version). Setting this implies `--no-verify`. |
 | `HARNESS_CONTAINER_RUNTIME` | Container runtime: `auto` (default — on macOS, prefers Apple's `container` CLI if on PATH; docker everywhere else), `docker` (force docker), or `apple` (deprecated explicit alias; warns). |
 | `HARNESS_EGRESS_SUBNET`     | Override the egress network subnet (IPv4 CIDR; default pool `192.0.2.0/24` split into /29s). |
-| `HARNESS_DESKTOP_PASSWORD`  | Set the Webapp sign-in password for `--desktop` (default: generated at first start, persisted in session data, printed in the terminal at every start). |
+| `HARNESS_DESKTOP_PASSWORD`  | Set the Webapp sign-in password for `harness desktop` (default: generated at first start, persisted in session data, printed in the terminal at every start). |
 | `XDG_DATA_HOME`             | Override the base directory for persistence data (defaults to `~/.local/share`). |
 | `XDG_CACHE_HOME`            | Override the base directory for the cosign cache (defaults to `~/.cache`). |
 

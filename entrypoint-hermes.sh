@@ -41,7 +41,7 @@ if [ -n "$HERMES_MODEL" ]; then
 	hermes config set model.default "$HERMES_MODEL" >/dev/null 2>&1
 fi
 
-# --desktop: serve the Webapp (browser-hosted Desktop) from this
+# Desktop mode: serve the Webapp (browser-hosted Desktop) from this
 # container. Mechanical setup: config, first-boot sign-in credentials,
 # gateway launch - no agent prompt involved.
 DESKTOP_OK=0
@@ -86,13 +86,23 @@ if [ -n "${HARNESS_DESKTOP:-}" ]; then
 		DESKTOP_OK=1
 		echo "harness desktop: http://localhost:${HARNESS_DESKTOP_HOST_PORT:-3000} - sign in: admin / $DESKTOP_PASSWORD"
 	else
-		echo "harness: ERROR: --desktop requested but the Webapp is not available in this image:" >&2
+		echo "harness desktop: ERROR: the Webapp is not available in this image:" >&2
 		echo "$DESKTOP_OUT" >&2
-		echo "harness: continuing without the Desktop." >&2
+		if [ -n "${HARNESS_DESKTOP_SERVE_ONLY:-}" ]; then
+			echo "harness desktop: serve-only mode has nothing to run; exiting." >&2
+		else
+			echo "harness: continuing without the Desktop." >&2
+		fi
 	fi
 fi
 
 if [ "$DESKTOP_OK" = 1 ]; then
+	if [ -n "${HARNESS_DESKTOP_SERVE_ONLY:-}" ]; then
+		# Serve-only (the `harness desktop` subcommand): no agent command
+		# runs - the Desktop's browser chat is the interface. Hand PID 1 to
+		# the gateway so the Webapp serves until the container stops.
+		exec hermes gateway run --replace
+	fi
 	# The Desktop outlives the agent command: run it as a child, then hand
 	# PID 1 to the gateway so the Webapp keeps serving until the container
 	# stops (docker stop / Ctrl-C).
@@ -100,6 +110,12 @@ if [ "$DESKTOP_OK" = 1 ]; then
 	"$@" || rc=$?
 	echo "harness desktop: agent command exited ($rc); the Desktop keeps serving until the container stops"
 	exec hermes gateway run --replace
+fi
+
+if [ -n "${HARNESS_DESKTOP_SERVE_ONLY:-}" ]; then
+	# Serve-only with no Desktop to serve (the loud error is above): stop
+	# instead of falling through to a command that was never given.
+	exit 1
 fi
 
 exec "$@"

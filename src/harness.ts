@@ -20,7 +20,6 @@ interface Args extends ParsedArgs {
   verify?: boolean;
   ephemeral: boolean;
   local: boolean;
-  desktop: boolean;
   skills?: boolean;
   "context-files"?: boolean;
   "mount-entire-home"?: boolean;
@@ -595,6 +594,14 @@ function isAgentName(name: string): name is AgentName {
 }
 
 const USAGE = `Usage: harness [options]
+       harness desktop [options]
+
+Commands:
+  desktop                Serve the hermes Webapp (browser Desktop) at http://localhost:3000. Runs no
+                         agent command (no TUI) - the Desktop's browser chat is the interface. Implies
+                         -a hermes (errors with any other -a) and a 3000:3000 publish (skipped when you
+                         already publish container port 3000 over TCP or without a protocol suffix).
+                         Prints a generated sign-in password at start. Takes no prompt.
 
 Options:
   -p, --prompt <text>    Pass a prompt directly to the coding agent
@@ -604,9 +611,6 @@ Options:
   -a, --agent <name>     Select the coding agent adapter: pi, opencode, hermes (default: pi)
   -v, --volumes <spec>   Additional volume mount (host:container[:opts]); may be repeated
   --port <spec>          Publish a container port to the host ([host-ip:]host-port:container-port[/protocol]); may be repeated
-  --desktop              Serve the hermes Webapp (browser Desktop) at http://localhost:3000; implies -a hermes
-                         (errors with any other -a) and a 3000:3000 publish (skipped when you already publish
-                         container port 3000). Prints a generated sign-in password at start
   --no-verify            Skip cosign image signature and provenance verification
   --no-skills            Disable mounting user skills directories (~/.agents/skills, ~/.claude/skills)
   --no-context-files     Disable mounting global context files (~/.agents/AGENTS.md, ~/.claude/CLAUDE.md); alias -nc
@@ -623,7 +627,7 @@ Environment variables:
   HARNESS_REGISTRY            Override the container registry (defaults to ghcr.io/boldblackai/harness)
   HARNESS_CONTAINER_RUNTIME   Container runtime: auto (default; prefers Apple container on macOS), docker, apple (deprecated)
   HARNESS_EGRESS_SUBNET       Override the egress network subnet pool (IPv4 CIDR, default 192.0.2.0/24 split into /29s)
-  HARNESS_DESKTOP_PASSWORD    Set the Webapp sign-in password for --desktop (default: generated at first start)
+  HARNESS_DESKTOP_PASSWORD    Set the Webapp sign-in password for harness desktop (default: generated at first start)
   XDG_DATA_HOME              Override the base directory for persistence data (defaults to ~/.local/share)
   XDG_CACHE_HOME             Override the base directory for cosign cache (defaults to ~/.cache)
 
@@ -663,7 +667,7 @@ function getImage(agent: string): string {
 }
 
 const MINIMIST_OPTS = {
-  boolean: ["help", "h", "ephemeral", "local", "mount-entire-home", "desktop"],
+  boolean: ["help", "h", "ephemeral", "local", "mount-entire-home"],
   string: [
     "env-file",
     "e",
@@ -729,7 +733,9 @@ const noSkills = argv.skills === false;
 const noContextFiles = argv["context-files"] === false;
 const mountEntireHome = argv["mount-entire-home"] === true;
 const localMode = argv.local;
-const desktopMode = argv.desktop === true;
+// The `harness desktop` subcommand serves the hermes Webapp only: no
+// agent command runs (no TUI), the browser is the interface.
+const desktopMode = argv._[0] === "desktop";
 const envFilePaths: string[] = Array.isArray(argv["env-file"])
   ? argv["env-file"]
   : argv["env-file"]
@@ -738,9 +744,14 @@ const envFilePaths: string[] = Array.isArray(argv["env-file"])
 const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
 const modelArg = argv.model || null;
-// --desktop keeps persistence on even with -p or piped stdin (a Desktop
-// session should survive like any interactive one); an explicit
-// --ephemeral still wins.
+if (desktopMode && (argv.prompt !== undefined || argv._.length > 1)) {
+  console.error(
+    "harness: desktop does not take a prompt; the Desktop's browser chat is the interface",
+  );
+  process.exit(1);
+}
+// harness desktop keeps persistence on (an interactive-style session);
+// an explicit --ephemeral still wins.
 const effectiveEphemeral =
   argv.ephemeral ||
   (!desktopMode && (promptArg !== null || !process.stdin.isTTY));
@@ -752,7 +763,7 @@ const agentName: AgentName = (() => {
     const requested = argv.agent;
     if (requested !== undefined && requested !== "hermes") {
       console.error(
-        `harness: --desktop works only with -a hermes (got -a "${requested}"); drop -a or pass -a hermes`,
+        `harness: desktop works only with -a hermes (got -a "${requested}"); drop -a or pass -a hermes`,
       );
       process.exit(1);
     }
@@ -853,16 +864,19 @@ for (const spec of portArgList) {
   }
 }
 
-// --desktop implies a 3000:3000 publish unless the user already publishes
-// container port 3000 themselves; the host port of that publish is what
-// the printed Desktop URL uses.
+// The `desktop` subcommand implies a 3000:3000 publish unless the user
+// already publishes container port 3000 themselves; the host port of
+// that publish is what the printed Desktop URL uses. Only a tcp (or
+// protocol-less, which the runtimes default to tcp) publish counts — a
+// udp/sctp one would leave the TCP Webapp unpublished and the printed
+// URL dead.
 const desktopHostPort = (() => {
   if (!desktopMode) {
     return null;
   }
   for (const spec of portArgList) {
     const match = spec.match(PORT_SPEC_REGEXP);
-    if (match && match[2] === "3000") {
+    if (match && match[2] === "3000" && (match[3] ?? "tcp") === "tcp") {
       return match[1];
     }
   }
@@ -1550,9 +1564,10 @@ async function run(prompt: string | null): Promise<void> {
   const cloudModeEnv =
     envFilePaths.length > 0 && !localMode ? ["-e", "HARNESS_CLOUD_MODE=1"] : [];
 
-  // --desktop: the entrypoint wires the Webapp (config + sign-in
-  // credentials) from these. HARNESS_DESKTOP_PASSWORD is the user's own
-  // password knob.
+  // The `desktop` subcommand: the entrypoint wires the Webapp (config +
+  // sign-in credentials) from these and serves it only (no agent
+  // command runs). HARNESS_DESKTOP_PASSWORD is the user's own password
+  // knob; HERMES_MODEL carries --model to the gateway's agent.
   const desktopEnv: string[] =
     desktopHostPort === null
       ? []
@@ -1560,16 +1575,24 @@ async function run(prompt: string | null): Promise<void> {
           "-e",
           "HARNESS_DESKTOP=1",
           "-e",
+          "HARNESS_DESKTOP_SERVE_ONLY=1",
+          "-e",
           `HARNESS_DESKTOP_HOST_PORT=${desktopHostPort}`,
         ];
   const desktopPassword = process.env.HARNESS_DESKTOP_PASSWORD ?? "";
   if (desktopHostPort !== null && desktopPassword !== "") {
     desktopEnv.push("-e", `HARNESS_DESKTOP_PASSWORD=${desktopPassword}`);
   }
+  if (desktopHostPort !== null && modelArg !== null) {
+    desktopEnv.push("-e", `HERMES_MODEL=${modelArg}`);
+  }
 
   const adapter = ADAPTERS[agentName];
   const adapterOptions = { prompt, model: modelArg, envFilePaths };
-  const containerCmd = adapter.buildCommand(adapterOptions);
+  // Serve-only in desktop mode: no agent command runs at all (no TUI) —
+  // the entrypoint hands PID 1 to the gateway and the browser is the
+  // interface.
+  const containerCmd = desktopMode ? [] : adapter.buildCommand(adapterOptions);
   const adapterDockerArgs = adapter.extraDockerArgs?.(adapterOptions) ?? [];
 
   const interactive = process.stdin.isTTY;
