@@ -715,7 +715,11 @@ const argv = minimist<Args>(rawArgs, MINIMIST_OPTS);
     "context-files", // --no-context-files / -nc sets context-files=false
     "local",
   ]);
-  const unknown = Object.keys(argv).filter((k) => !knownKeys.has(k));
+  // `--desktop`/`--no-desktop` always hard-error with migration guidance
+  // below; don't stack an "unrecognized flag" warning on top of it.
+  const unknown = Object.keys(argv).filter(
+    (k) => !knownKeys.has(k) && k !== "desktop",
+  );
   if (unknown.length > 0) {
     process.stderr.write(
       `warning: unrecognized flag(s): ${unknown.map((k) => `--${k}`).join(", ")}\n`,
@@ -750,7 +754,7 @@ const envFilePaths: string[] = Array.isArray(argv["env-file"])
 const fileArg = argv.file || null;
 const promptArg = argv.prompt || null;
 const modelArg = argv.model || null;
-if (desktopMode && (promptArg !== null || argv._.length > 1)) {
+if (desktopMode && (argv.prompt !== undefined || argv._.length > 1)) {
   console.error(
     "harness: desktop does not take a prompt; the Desktop's browser chat is the interface",
   );

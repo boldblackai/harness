@@ -35,6 +35,12 @@ test("desktop takes no prompt (hard error)", () => {
   assert.match(r.stderr, /desktop does not take a prompt/);
 });
 
+test("desktop rejects an empty --prompt too (no coercion gap)", () => {
+  const r = runCli(["desktop", "--prompt", ""]);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /desktop does not take a prompt/);
+});
+
 test("desktop takes no positional prompt (hard error)", () => {
   const r = runCli(["desktop", "extra-words"]);
   assert.equal(r.status, 1, r.stderr);
@@ -45,6 +51,10 @@ test("the old --desktop flag hard-errors with migration guidance", () => {
   const r = runCli(["--desktop"]);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /`desktop` subcommand/);
+  assert.ok(
+    !r.stderr.includes("unrecognized"),
+    `no stray warning should stack on the migration error: ${r.stderr}`,
+  );
 });
 
 // ---- `harness desktop`: serve-only + publish/env plumbing -------------------
