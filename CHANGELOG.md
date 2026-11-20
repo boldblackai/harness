@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.14.1] - 2026-11-20
+
+### Summary
+
+Two reliability fixes for the hermes image. The container no longer stays bricked by a stale gateway control pointer left behind on a bind-mounted `HERMES_HOME`: at boot, `entrypoint-hermes.sh` now removes a pointer whose target is not a live socket and best-effort removes the dead target's pinned `hermes-gw-*` scratch directory, while never touching a live sibling container's pointer (this fixes the opaque `Gateway inaccessible: invalid_control_peer` failure class on host shares such as macOS virtiofs, where a dead socket inode can be neither stat'ed nor removed from inside the container). And the image build's verify-chain downloads (cosign, uv attestation, tirith) now route through one bounded-retry fetch helper: transient failures (HTTP 403/429/5xx and transport errors) retry with backoff honoring `Retry-After`, redirects are followed, and verification stays fail-closed — so transient GitHub API rate-limit 403s no longer abort image builds.
+
+### Changes
+
+- e24f494 fix(build): retry transient fetch failures in the Dockerfile.hermes verify chain (#227)
+- 13aabb0 fix(entrypoint): clean stale gateway control pointer at container boot (#225)
+
 ## [1.14.0] - 2026-11-17
 
 ### Summary
