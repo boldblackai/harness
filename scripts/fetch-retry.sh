@@ -5,9 +5,10 @@
 # verify chains (Dockerfile.hermes). Transient failures — HTTP 403/429/5xx
 # and transport errors (curl exit 7/28/56) — retry with bounded exponential
 # backoff; Retry-After (delta-seconds) governs the sleep when present.
-# Non-transient failures (other 4xx, other curl exits) fail immediately so a
-# bad digest never sits through retries. Persistent failure exits non-zero
-# after the bound: verification stays fail-closed.
+# Redirects are followed (-L, bounded) and the final post-redirect status is
+# classified. Non-transient failures (other 4xx, other curl exits) fail
+# immediately so a bad digest never sits through retries. Persistent failure
+# exits non-zero after the bound: verification stays fail-closed.
 set -u
 OUT="$1"
 URL="$2"
@@ -18,14 +19,24 @@ DEADLINE=$(( $(date +%s) + 300 ))
 attempt=1
 while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
   HDRS=$(mktemp)
-  CODE=$(curl -sS -o "$OUT.tmp" -D "$HDRS" -w "%{http_code}" \
-        --connect-timeout 10 --max-time 60 "$@" "$URL" 2>/dev/null)
+  # Curl semantics: the FIRST -o wins for a single transfer and scalar options
+  # are last-wins — so the fixed output path goes before "$@", and the fixed
+  # bounds (status capture, timeouts, redirect policy) go after it. Caller
+  # args can add options (e.g. -H) but cannot override the fetch contract.
+  CODE=$(curl -sS -o "$OUT.tmp" "$@" -D "$HDRS" -w "%{http_code}" \
+        --connect-timeout 10 --max-time 60 --max-redirs 10 -L "$URL" 2>/dev/null)
   RC=$?
-  RA=$(sed -n 's/^[Rr]etry-[Aa]fter: *\([0-9][0-9]*\).*/\1/p' "$HDRS" | head -1)
+  RA=$(sed -n 's/^[Rr]etry-[Aa]fter: *\([0-9][0-9]*\).*/\1/p' "$HDRS" | tail -1)
   rm -f "$HDRS"
   if [ "$RC" -eq 0 ] && [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]; then
-    mv "$OUT.tmp" "$OUT"
-    exit 0
+    # mv -T: strict target semantics — a non-file at OUT is a failed promote,
+    # never a silent move-into-directory that would report success.
+    if mv -T "$OUT.tmp" "$OUT"; then
+      exit 0
+    fi
+    echo "fetch_retry: failed to promote $OUT.tmp to $OUT" >&2
+    rm -f "$OUT.tmp"
+    exit 1
   fi
   TRANSIENT=0
   case "$RC" in 7|28|56) TRANSIENT=1 ;; esac
