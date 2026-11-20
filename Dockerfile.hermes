@@ -16,10 +16,14 @@ ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# Bounded-retry fetch wrapper for every verify-chain download below; removed
+# by the last verify RUN so the shipped filesystem carries no extra file.
+COPY scripts/fetch-retry.sh /tmp/fetch-retry.sh
+
 RUN set -eux && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
-    curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-${ARCH}" \
-        -o /usr/local/bin/cosign && \
+    bash /tmp/fetch-retry.sh /usr/local/bin/cosign \
+        "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-${ARCH}" && \
     case "${ARCH}" in \
         amd64) EXPECTED="${COSIGN_AMD64_SHA256}" ;; \
         arm64) EXPECTED="${COSIGN_ARM64_SHA256}" ;; \
@@ -27,10 +31,10 @@ RUN set -eux && \
     esac && \
     echo "${EXPECTED}  /usr/local/bin/cosign" | sha256sum --check --strict && \
     chmod +x /usr/local/bin/cosign && \
-    curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt" \
-        -o /tmp/cosign_checksums.txt && \
-    curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt.sigstore.json" \
-        -o /tmp/cosign_checksums.txt.sigstore.json && \
+    bash /tmp/fetch-retry.sh /tmp/cosign_checksums.txt \
+        "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt" && \
+    bash /tmp/fetch-retry.sh /tmp/cosign_checksums.txt.sigstore.json \
+        "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign_checksums.txt.sigstore.json" && \
     cosign verify-blob \
         --new-bundle-format \
         --bundle /tmp/cosign_checksums.txt.sigstore.json \
@@ -53,12 +57,12 @@ COPY --from=uv-src /uv /usr/local/bin/uv
 ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
 
 RUN set -eux && \
-    curl -fsSL -H "Accept: application/vnd.github+json" \
+    bash /tmp/fetch-retry.sh /tmp/uv-attestations.json \
         "https://api.github.com/repos/astral-sh/uv/attestations/${UV_DIGEST}" \
-        -o /tmp/uv-attestations.json && \
+        -H "Accept: application/vnd.github+json" && \
     BUNDLE_URL=$(jq -r '.attestations[0].bundle_url // .attestations[0].bundle' /tmp/uv-attestations.json) && \
     if echo "${BUNDLE_URL}" | grep -q '^https\?://'; then \
-        curl -fsSL "${BUNDLE_URL}" -o /tmp/uv-bundle.json.sn && \
+        bash /tmp/fetch-retry.sh /tmp/uv-bundle.json.sn "${BUNDLE_URL}" && \
         python3 -c "import snappy,sys; sys.stdout.buffer.write(snappy.decompress(open('/tmp/uv-bundle.json.sn','rb').read()))" > /tmp/uv-bundle.json; \
     else \
         jq '.attestations[0].bundle' /tmp/uv-attestations.json > /tmp/uv-bundle.json; \
@@ -81,23 +85,23 @@ RUN set -eux && \
         arm64) TIRITH_ARCH=aarch64-unknown-linux-gnu ;; \
     esac && \
     TIRITH_FILE="tirith-${TIRITH_ARCH}.tar.gz" && \
-    curl -fsSL "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/checksums.txt" \
-        -o /tmp/checksums.txt && \
-    curl -fsSL "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/checksums.txt.pem" \
-        -o /tmp/checksums.txt.pem && \
-    curl -fsSL "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/checksums.txt.sig" \
-        -o /tmp/checksums.txt.sig && \
+    bash /tmp/fetch-retry.sh /tmp/checksums.txt \
+        "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/checksums.txt" && \
+    bash /tmp/fetch-retry.sh /tmp/checksums.txt.pem \
+        "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/checksums.txt.pem" && \
+    bash /tmp/fetch-retry.sh /tmp/checksums.txt.sig \
+        "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/checksums.txt.sig" && \
     cosign verify-blob \
         --cert /tmp/checksums.txt.pem \
         --signature /tmp/checksums.txt.sig \
         --certificate-identity-regexp "https://github.com/sheeki03/tirith/.github/workflows/.*" \
         --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
         /tmp/checksums.txt && \
-    curl -fsSL "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/${TIRITH_FILE}" \
-        -o "/tmp/${TIRITH_FILE}" && \
+    bash /tmp/fetch-retry.sh "/tmp/${TIRITH_FILE}" \
+        "https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}/${TIRITH_FILE}" && \
     grep "${TIRITH_FILE}" /tmp/checksums.txt | sed "s|${TIRITH_FILE}|/tmp/${TIRITH_FILE}|" | sha256sum --check --strict && \
     tar -xzf "/tmp/${TIRITH_FILE}" -C /usr/local/bin/ tirith && \
-    rm -f /tmp/checksums.txt /tmp/checksums.txt.pem /tmp/checksums.txt.sig "/tmp/${TIRITH_FILE}"
+    rm -f /tmp/checksums.txt /tmp/checksums.txt.pem /tmp/checksums.txt.sig "/tmp/${TIRITH_FILE}" /tmp/fetch-retry.sh
 
 # Mirrors upstream's [tool.uv] override-dependencies for the one conflict our
 # install resolution hits; see hermes-uv-overrides.txt for provenance and the
