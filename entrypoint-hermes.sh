@@ -28,9 +28,10 @@ printf '%s\n' docker >"$HERMES_HOME/.install_method"
 # it.
 GW_POINTER="$HERMES_HOME/gateway.sock.path"
 if [ -f "$GW_POINTER" ]; then
-	# Hermes' pointer readers strip trailing whitespace; match that so a
-	# CRLF-polluted pointer naming a live socket is not called stale.
-	gw_target=$(head -n 1 "$GW_POINTER" 2>/dev/null | sed 's/[[:space:]]*$//')
+	# Hermes' pointer readers strip whitespace from both ends of the whole
+	# content; match that so a whitespace-polluted pointer naming a live
+	# socket (leading or trailing, CRLF included) is not called stale.
+	gw_target=$(awk '{t = t $0} END {sub(/^[[:space:]]+/, "", t); sub(/[[:space:]]+$/, "", t); print t}' "$GW_POINTER" 2>/dev/null) || true
 	# A published pointer's target is always a plain bound socket (the
 	# listener binds before the pointer is published), so gate on that:
 	# missing, unstatable, symlinked, or wrong-type targets are stale by
