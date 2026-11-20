@@ -12,6 +12,42 @@ HERMES_HOME="/home/harness/.hermes"
 mkdir -p "$HERMES_HOME"
 printf '%s\n' docker >"$HERMES_HOME/.install_method"
 
+# Stale gateway control-pointer cleanup. A previous container's
+# temp-fallback control socket can survive on a bind-mounted HERMES_HOME
+# as an inode the host share (macOS virtiofs) can neither stat nor remove
+# from inside the container. Hermes discovery follows gateway.sock.path,
+# lstats that inode, gets "Operation not supported", and every later
+# client fails with an opaque "Gateway inaccessible:
+# invalid_control_peer" - which reads as "inaccessible", not "absent", so
+# no gateway is ever auto-started again to clean it up: the workspace
+# stays bricked until the artifacts are removed by hand. At entrypoint
+# time nothing of THIS container is running yet, so a pointer whose
+# target cannot be stat'ed is stale by definition. The gate checks the
+# target, never blanket-deletes: a live sibling container sharing this
+# bucket (the desktop multiplexer) owns a statable target and must keep
+# it.
+GW_POINTER="$HERMES_HOME/gateway.sock.path"
+if [ -f "$GW_POINTER" ]; then
+	gw_target=$(head -n 1 "$GW_POINTER" 2>/dev/null || true)
+	# A published pointer's target is always a bound socket (the listener
+	# binds before the pointer is published), so gate on the same
+	# predicate hermes' own discovery uses: is a live socket. Missing,
+	# unstatable, or wrong-type targets are stale by definition.
+	if [ -z "$gw_target" ] || ! [ -S "$gw_target" ]; then
+		echo "harness: removing stale gateway control pointer (dead target: ${gw_target:-unreadable})" >&2
+		rm -f "$GW_POINTER" || true
+		# Best effort: the dead target's private directory is junk once
+		# the pointer is gone. Removal can fail on the same unstatable
+		# share; that is harmless. The case pattern pins the removal to
+		# the hermes-owned fallback location, never pointer-chosen paths.
+		case "$gw_target" in
+			"$HERMES_HOME"/cache/scratch/hermes-gw-*/control.sock)
+				rm -rf "${gw_target%/*}" 2>/dev/null || true
+				;;
+		esac
+	fi
+fi
+
 if [ ! -f "$CONFIG" ]; then
 	# First run
 	if [ -z "$HARNESS_CLOUD_MODE" ]; then
