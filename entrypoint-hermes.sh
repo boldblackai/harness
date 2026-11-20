@@ -28,23 +28,35 @@ printf '%s\n' docker >"$HERMES_HOME/.install_method"
 # it.
 GW_POINTER="$HERMES_HOME/gateway.sock.path"
 if [ -f "$GW_POINTER" ]; then
-	gw_target=$(head -n 1 "$GW_POINTER" 2>/dev/null || true)
-	# A published pointer's target is always a bound socket (the listener
-	# binds before the pointer is published), so gate on the same
-	# predicate hermes' own discovery uses: is a live socket. Missing,
-	# unstatable, or wrong-type targets are stale by definition.
-	if [ -z "$gw_target" ] || ! [ -S "$gw_target" ]; then
+	# Hermes' pointer readers strip trailing whitespace; match that so a
+	# CRLF-polluted pointer naming a live socket is not called stale.
+	gw_target=$(head -n 1 "$GW_POINTER" 2>/dev/null | sed 's/[[:space:]]*$//')
+	# A published pointer's target is always a plain bound socket (the
+	# listener binds before the pointer is published), so gate on that:
+	# missing, unstatable, symlinked, or wrong-type targets are stale by
+	# definition. A symlink target is a dead end for hermes too - its
+	# discovery lstats the target itself and refuses non-sockets.
+	if [ -z "$gw_target" ] || [ -L "$gw_target" ] || ! [ -S "$gw_target" ]; then
 		echo "harness: removing stale gateway control pointer (dead target: ${gw_target:-unreadable})" >&2
-		rm -f "$GW_POINTER" || true
-		# Best effort: the dead target's private directory is junk once
-		# the pointer is gone. Removal can fail on the same unstatable
-		# share; that is harmless. The case pattern pins the removal to
-		# the hermes-owned fallback location, never pointer-chosen paths.
-		case "$gw_target" in
-			"$HERMES_HOME"/cache/scratch/hermes-gw-*/control.sock)
-				rm -rf "${gw_target%/*}" 2>/dev/null || true
-				;;
-		esac
+		rm -f -- "$GW_POINTER" || true
+		# Best effort: drop the dead target's private fallback directory.
+		# Containment is exact-parent equality plus a one-segment name
+		# check - bash case globs match "/" (a glob-shaped pin alone lets
+		# a tampered pointer's ".." segments escape it), so this allows
+		# exactly one directory level below $HERMES_HOME/cache/scratch
+		# named hermes-gw-*. Other fallback locations hermes can choose
+		# (XDG_RUNTIME_DIR, /tmp, the squat-proof hgw-* root) are not
+		# swept; their dead directories stay as harmless junk once the
+		# pointer is gone, and removal can fail on the same unstatable
+		# share, which is also harmless.
+		gw_dir=${gw_target%/*}
+		if [ "${gw_dir%/*}" = "$HERMES_HOME/cache/scratch" ]; then
+			case "${gw_dir##*/}" in
+				hermes-gw-*)
+					rm -rf -- "$gw_dir" 2>/dev/null || true
+					;;
+			esac
+		fi
 	fi
 fi
 
