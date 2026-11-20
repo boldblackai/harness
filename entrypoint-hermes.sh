@@ -12,6 +12,55 @@ HERMES_HOME="/home/harness/.hermes"
 mkdir -p "$HERMES_HOME"
 printf '%s\n' docker >"$HERMES_HOME/.install_method"
 
+# Stale gateway control-pointer cleanup. A previous container's
+# temp-fallback control socket can survive on a bind-mounted HERMES_HOME
+# as an inode the host share (macOS virtiofs) can neither stat nor remove
+# from inside the container. Hermes discovery follows gateway.sock.path,
+# lstats that inode, gets "Operation not supported", and every later
+# client fails with an opaque "Gateway inaccessible:
+# invalid_control_peer" - which reads as "inaccessible", not "absent", so
+# no gateway is ever auto-started again to clean it up: the workspace
+# stays bricked until the artifacts are removed by hand. At entrypoint
+# time nothing of THIS container is running yet, so a pointer whose
+# target cannot be stat'ed is stale by definition. The gate checks the
+# target, never blanket-deletes: a live sibling container sharing this
+# bucket (the desktop multiplexer) owns a statable target and must keep
+# it.
+GW_POINTER="$HERMES_HOME/gateway.sock.path"
+if [ -f "$GW_POINTER" ]; then
+	# Hermes' pointer readers strip whitespace from both ends of the whole
+	# content; match that so a whitespace-polluted pointer naming a live
+	# socket (leading or trailing, CRLF included) is not called stale.
+	gw_target=$(awk '{t = t $0} END {sub(/^[[:space:]]+/, "", t); sub(/[[:space:]]+$/, "", t); print t}' "$GW_POINTER" 2>/dev/null) || true
+	# A published pointer's target is always a plain bound socket (the
+	# listener binds before the pointer is published), so gate on that:
+	# missing, unstatable, symlinked, or wrong-type targets are stale by
+	# definition. A symlink target is a dead end for hermes too - its
+	# discovery lstats the target itself and refuses non-sockets.
+	if [ -z "$gw_target" ] || [ -L "$gw_target" ] || ! [ -S "$gw_target" ]; then
+		echo "harness: removing stale gateway control pointer (dead target: ${gw_target:-unreadable})" >&2
+		rm -f -- "$GW_POINTER" || true
+		# Best effort: drop the dead target's private fallback directory.
+		# Containment is exact-parent equality plus a one-segment name
+		# check - bash case globs match "/" (a glob-shaped pin alone lets
+		# a tampered pointer's ".." segments escape it), so this allows
+		# exactly one directory level below $HERMES_HOME/cache/scratch
+		# named hermes-gw-*. Other fallback locations hermes can choose
+		# (XDG_RUNTIME_DIR, /tmp, the squat-proof hgw-* root) are not
+		# swept; their dead directories stay as harmless junk once the
+		# pointer is gone, and removal can fail on the same unstatable
+		# share, which is also harmless.
+		gw_dir=${gw_target%/*}
+		if [ "${gw_dir%/*}" = "$HERMES_HOME/cache/scratch" ]; then
+			case "${gw_dir##*/}" in
+				hermes-gw-*)
+					rm -rf -- "$gw_dir" 2>/dev/null || true
+					;;
+			esac
+		fi
+	fi
+fi
+
 if [ ! -f "$CONFIG" ]; then
 	# First run
 	if [ -z "$HARNESS_CLOUD_MODE" ]; then
