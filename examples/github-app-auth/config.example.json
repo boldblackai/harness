@@ -1,0 +1,9 @@
+{
+  "ssm_parameter_prefix": "/harness/github-app",
+  "repository_ids": [],
+  "repositories": [],
+  "permissions": {
+    "contents": "write",
+    "pull_requests": "write"
+  }
+}
